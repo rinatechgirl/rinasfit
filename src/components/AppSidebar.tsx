@@ -15,11 +15,14 @@ import {
   BookOpen,
   Sun,
   Moon,
+  MessageCircle,
+  ShoppingCart,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "@/hooks/useTheme";
 import { cn } from "@/lib/utils";
 import fallbackLogo from "@/assets/logo.jpeg";
+import { MessageCircle, ShoppingCart } from "lucide-react";
 
 // ─── Nav items ────────────────────────────────────────────────────────────────
 
@@ -27,6 +30,18 @@ const navItems = [
   { to: "/dashboard",    label: "Dashboard",     icon: LayoutDashboard },
   { to: "/customers",    label: "Customers",     icon: Users           },
   { to: "/measurements", label: "Measurements",  icon: Ruler           },
+  {
+    label: "Customer Inbox",
+    icon: "MessageCircle",   // import { MessageCircle } from "lucide-react"
+    href: "/inbox",
+    // No adminOnly restriction — all staff can chat with customers
+  },
+  {
+    label: "Customer Orders",
+    icon: "ShoppingCart",    // import { ShoppingCart } from "lucide-react"
+    href: "/orders",
+    // No adminOnly restriction — all staff can view/update orders
+  },
   { to: "/designs",      label: "Designs",       icon: Palette         },
   { to: "/categories",   label: "Categories",    icon: FolderOpen      },
   { to: "/catalogue",    label: "Our Catalogue", icon: BookOpen        },
