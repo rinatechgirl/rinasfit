@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Loader2, ArrowRight, Eye, EyeOff } from "lucide-react";
+import { Loader2, ArrowRight, Eye, EyeOff, ShieldAlert } from "lucide-react";
 import fallbackLogo from "@/assets/logo.jpeg";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -17,11 +17,6 @@ const IS_DEV =
   window.location.hostname === "localhost" ||
   window.location.hostname === "127.0.0.1";
 
-/**
- * Redirects to the tenant's own subdomain.
- * On localhost (dev), uses a ?tenant= query param as a fallback
- * because subdomains don't resolve locally without extra setup.
- */
 function redirectToTenantSubdomain(slug: string, path = "/auth") {
   if (IS_DEV) {
     window.location.href = `${path}?tenant=${slug}`;
@@ -29,8 +24,6 @@ function redirectToTenantSubdomain(slug: string, path = "/auth") {
     window.location.href = `https://${slug}.${BASE_DOMAIN}${path}`;
   }
 }
-
-// ─── Shared loading screen ────────────────────────────────────────────────────
 
 function FullPageSpinner() {
   return (
@@ -40,7 +33,7 @@ function FullPageSpinner() {
   );
 }
 
-// ─── Mode 1: Branded tenant login (slug.rinasfit.com/auth) ────────────────────
+// ─── Mode 1: Branded tenant login (slug.rinasfit.com/auth) ───────────────────
 
 function TenantLogin({ slug }: { slug: string }) {
   const navigate = useNavigate();
@@ -55,98 +48,84 @@ function TenantLogin({ slug }: { slug: string }) {
     e.preventDefault();
     setLoading(true);
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-
-    setLoading(false);
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
     if (error) {
       toast.error(error.message);
-    } else {
-      // App.tsx AuthGate handles the final redirect (/dashboard or /admin)
-      navigate("/dashboard", { replace: true });
+      setLoading(false);
+      return;
     }
+
+    // ── SECURITY CHECK: block platform admins from tenant login pages ─────────
+    // Platform admins have no tenant and should only log in at rinasfit.com/auth
+    const { data: isPlatAdmin } = await supabase.rpc("is_platform_admin");
+    if (isPlatAdmin === true) {
+      await supabase.auth.signOut();
+      toast.error(
+        "Platform administrators cannot sign in through a business portal. Please use the main Rina's Fit login."
+      );
+      setLoading(false);
+      return;
+    }
+
+    // ── SECURITY CHECK: block customers from designer login ───────────────────
+    if (data.user?.user_metadata?.role === "customer") {
+      await supabase.auth.signOut();
+      toast.error(
+        "This is a designer login page. Please sign in at rinasfit.com/customer/auth."
+      );
+      setLoading(false);
+      return;
+    }
+
+    navigate("/dashboard", { replace: true });
+    setLoading(false);
   };
 
   if (tenantLoading) return <FullPageSpinner />;
 
-  // Slug exists in URL but no matching tenant in DB
   if (notFound) {
     return (
       <div className="min-h-screen bg-background flex flex-col">
-
-        {/* Minimal nav */}
         <nav className="h-14 border-b border-border flex items-center px-6">
           <img src={fallbackLogo} alt="Rina's Fit" className="w-7 h-7 object-contain rounded-sm" />
         </nav>
 
-        {/* Main content */}
         <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
-
-          {/* Illustration — three abstract figures like SelPay's 404 */}
           <div className="relative w-64 h-44 mb-8 select-none">
             <svg viewBox="0 0 260 180" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full">
-              {/* Ground shadow */}
               <ellipse cx="130" cy="168" rx="90" ry="8" fill="currentColor" className="text-muted/40"/>
-
-              {/* Left figure */}
               <circle cx="52" cy="54" r="16" fill="currentColor" className="text-muted-foreground/30"/>
               <rect x="38" y="72" width="28" height="38" rx="8" fill="currentColor" className="text-muted-foreground/30"/>
               <rect x="34" y="112" width="12" height="30" rx="6" fill="currentColor" className="text-muted-foreground/30"/>
               <rect x="54" y="112" width="12" height="30" rx="6" fill="currentColor" className="text-muted-foreground/30"/>
-              {/* Left figure arm raised */}
               <rect x="24" y="74" width="12" height="30" rx="6" fill="currentColor" className="text-muted-foreground/30" transform="rotate(-30 30 74)"/>
-
-              {/* Right figure */}
               <circle cx="208" cy="54" r="16" fill="currentColor" className="text-muted-foreground/30"/>
               <rect x="194" y="72" width="28" height="38" rx="8" fill="currentColor" className="text-muted-foreground/30"/>
               <rect x="190" y="112" width="12" height="30" rx="6" fill="currentColor" className="text-muted-foreground/30"/>
               <rect x="210" y="112" width="12" height="30" rx="6" fill="currentColor" className="text-muted-foreground/30"/>
-              {/* Right figure arm raised */}
               <rect x="220" y="74" width="12" height="30" rx="6" fill="currentColor" className="text-muted-foreground/30" transform="rotate(30 226 74)"/>
-
-              {/* Centre: large "?" symbol */}
               <rect x="95" y="30" width="70" height="90" rx="14" fill="currentColor" className="text-primary/15"/>
-              <text
-                x="130"
-                y="92"
-                textAnchor="middle"
-                fontSize="56"
-                fontWeight="700"
-                fill="currentColor"
-                className="text-primary/40"
-                fontFamily="sans-serif"
-              >?</text>
-
-              {/* Small speech bubble above left figure */}
+              <text x="130" y="92" textAnchor="middle" fontSize="56" fontWeight="700" fill="currentColor" className="text-primary/40" fontFamily="sans-serif">?</text>
               <rect x="60" y="22" width="36" height="20" rx="6" fill="currentColor" className="text-muted-foreground/20"/>
               <polygon points="70,42 76,50 82,42" fill="currentColor" className="text-muted-foreground/20"/>
               <text x="78" y="36" textAnchor="middle" fontSize="9" fill="currentColor" className="text-muted-foreground/60" fontFamily="sans-serif">hmm</text>
             </svg>
           </div>
 
-          {/* Heading */}
-          <h1 className="text-2xl font-semibold text-foreground">
-            Sorry, organisation not found!
-          </h1>
-
-          {/* Subtext — mirrors SelPay's message style */}
+          <h1 className="text-2xl font-semibold text-foreground">Sorry, organisation not found!</h1>
           <p className="text-sm text-muted-foreground mt-3 max-w-sm leading-relaxed">
             Looks like{" "}
             <span className="font-semibold text-foreground">{slug}.rinasfit.com</span>{" "}
-            doesn't exist. Please check the link, or contact the business owner to get
-            the correct address.
+            doesn't exist. Please check the link, or contact the business owner to get the correct address.
           </p>
 
-          {/* Divider */}
           <div className="w-16 h-px bg-border my-6" />
 
-          {/* Actions */}
           <div className="flex flex-col sm:flex-row items-center gap-3">
             <Button
               onClick={() =>
-                IS_DEV
-                  ? navigate("/auth")
-                  : (window.location.href = `https://${BASE_DOMAIN}/auth`)
+                IS_DEV ? navigate("/auth") : (window.location.href = `https://${BASE_DOMAIN}/auth`)
               }
             >
               Sign in to your organisation
@@ -164,7 +143,6 @@ function TenantLogin({ slug }: { slug: string }) {
           </div>
         </div>
 
-        {/* Footer */}
         <footer className="h-12 border-t border-border flex items-center justify-center">
           <p className="text-xs text-muted-foreground">
             © {new Date().getFullYear()} Rina's Fit. All rights reserved.
@@ -179,16 +157,12 @@ function TenantLogin({ slug }: { slug: string }) {
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="w-full max-w-sm space-y-8">
-
-        {/* Tenant branding */}
         <div className="flex flex-col items-center gap-3 text-center">
           <img
             src={logoSrc}
             alt={tenant?.business_name ?? slug}
             className="w-20 h-20 object-contain rounded-xl border border-border bg-background p-1 shadow-sm"
-            onError={(e) => {
-              (e.currentTarget as HTMLImageElement).src = fallbackLogo;
-            }}
+            onError={(e) => { (e.currentTarget as HTMLImageElement).src = fallbackLogo; }}
           />
           <div>
             <h1 className="text-lg font-semibold text-foreground">
@@ -198,7 +172,6 @@ function TenantLogin({ slug }: { slug: string }) {
           </div>
         </div>
 
-        {/* Login form */}
         <form onSubmit={handleLogin} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="email">Email address</Label>
@@ -271,11 +244,9 @@ function SlugDiscovery() {
   const navigate = useNavigate();
   const [mode, setMode] = useState<"business" | "admin">("business");
 
-  // Business slug lookup
   const [slug, setSlug] = useState("");
   const [slugLoading, setSlugLoading] = useState(false);
 
-  // Admin email/password
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -320,20 +291,45 @@ function SlugDiscovery() {
     e.preventDefault();
     setAdminLoading(true);
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    setAdminLoading(false);
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
     if (error) {
       toast.error(error.message);
-    } else {
-      navigate("/admin", { replace: true });
+      setAdminLoading(false);
+      return;
     }
+
+    // ── SECURITY CHECK: verify the user is actually a platform admin ──────────
+    // Organisation admins have role = 'admin' in user_roles but are NOT platform admins.
+    // They must NOT be able to access the platform admin panel.
+    const { data: isPlatAdmin } = await supabase.rpc("is_platform_admin");
+
+    if (isPlatAdmin !== true) {
+      // Sign them out immediately — wrong login form
+      await supabase.auth.signOut();
+
+      // Give a helpful error based on who they likely are
+      if (data.user?.user_metadata?.role === "customer") {
+        toast.error(
+          "This is the platform admin login. Customers should sign in at rinasfit.com/customer/auth"
+        );
+      } else {
+        toast.error(
+          "This account is not a platform administrator. Please sign in through your organisation's portal instead."
+        );
+      }
+      setAdminLoading(false);
+      return;
+    }
+
+    // Verified platform admin — proceed
+    navigate("/admin", { replace: true });
+    setAdminLoading(false);
   };
 
   return (
     <div className="min-h-screen bg-background flex">
-
-      {/* Left: branding panel */}
+      {/* Left branding panel */}
       <div className="hidden lg:flex lg:w-5/12 xl:w-1/2 bg-muted/40 border-r border-border items-center justify-center p-12">
         <div className="max-w-sm space-y-8">
           <img src={fallbackLogo} alt="Rina's Fit" className="w-10 h-10 object-contain" />
@@ -361,16 +357,10 @@ function SlugDiscovery() {
         </div>
       </div>
 
-      {/* Right: form panel */}
+      {/* Right form panel */}
       <div className="flex-1 flex items-center justify-center p-6">
         <div className="w-full max-w-sm space-y-8">
-
-          {/* Mobile logo */}
-          <img
-            src={fallbackLogo}
-            alt="Rina's Fit"
-            className="w-8 h-8 object-contain lg:hidden"
-          />
+          <img src={fallbackLogo} alt="Rina's Fit" className="w-8 h-8 object-contain lg:hidden" />
 
           <div>
             <h1 className="text-xl font-semibold text-foreground">
@@ -379,11 +369,22 @@ function SlugDiscovery() {
             <p className="text-sm text-muted-foreground mt-1">
               {mode === "business"
                 ? "Enter your business username to continue"
-                : "Use your platform administrator credentials"}
+                : "Restricted to Rina's Fit platform administrators only"}
             </p>
           </div>
 
-          {/* Business login: slug lookup */}
+          {/* Platform admin warning banner */}
+          {mode === "admin" && (
+            <div className="flex items-start gap-3 p-3 bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/30 rounded-lg">
+              <ShieldAlert className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+              <p className="text-xs text-amber-800 dark:text-amber-400 leading-relaxed">
+                This login is for <strong>Rina's Fit platform administrators only</strong>.
+                If you're a fashion designer or organisation admin, please sign in through your business portal instead.
+              </p>
+            </div>
+          )}
+
+          {/* Business slug lookup */}
           {mode === "business" && (
             <form onSubmit={handleSlugSubmit} className="space-y-5">
               <div className="space-y-2">
@@ -418,7 +419,7 @@ function SlugDiscovery() {
             </form>
           )}
 
-          {/* Admin login: email + password */}
+          {/* Platform admin email + password */}
           {mode === "admin" && (
             <form onSubmit={handleAdminLogin} className="space-y-4">
               <div className="space-y-2">
@@ -457,7 +458,7 @@ function SlugDiscovery() {
               </div>
               <Button type="submit" className="w-full" disabled={adminLoading}>
                 {adminLoading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                Sign in
+                Sign in as Platform Admin
               </Button>
             </form>
           )}
@@ -493,17 +494,12 @@ function SlugDiscovery() {
   );
 }
 
-// ─── Root export — auto-detects mode from hostname / query param ──────────────
+// ─── Root export ──────────────────────────────────────────────────────────────
 
 const Auth = () => {
   const [searchParams] = useSearchParams();
-
-  // Production: detect from subdomain (e.g. royalpark.rinasfit.com)
   const subdomainSlug = getTenantSlugFromHostname();
-
-  // Development: detect from ?tenant= query param (localhost fallback)
   const devSlug = searchParams.get("tenant");
-
   const tenantSlug = subdomainSlug ?? devSlug;
 
   if (tenantSlug) return <TenantLogin slug={tenantSlug} />;
