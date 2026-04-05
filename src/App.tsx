@@ -8,6 +8,7 @@ import { CustomerAuthProvider, useCustomerAuth } from "@/hooks/useCustomerAuth";
 import { getTenantSlugFromHostname } from "@/hooks/useTenantSlug";
 import AppLayout from "@/components/AppLayout";
 import Auth from "@/pages/Auth";
+import AdminLogin from "@/pages/AdminLogin";
 import Dashboard from "@/pages/Dashboard";
 import Customers from "@/pages/Customers";
 import CustomerDetail from "@/pages/CustomerDetail";
@@ -25,8 +26,6 @@ import StaffManagement from "@/pages/StaffManagement";
 import Landing from "@/pages/Landing";
 import Magazine from "@/pages/Magazine";
 import Catalogue from "@/pages/Catalogue";
-
-// ── New customer portal pages ──────────────────────────────────────────────
 import CustomerAuth from "@/pages/CustomerAuth";
 import CustomerDashboard from "@/pages/CustomerDashboard";
 import OrdersManagement from "@/pages/OrdersManagement";
@@ -34,7 +33,17 @@ import DesignerInbox from "@/components/customer/DesignerInbox";
 
 const queryClient = new QueryClient();
 
-// ─── Route guards — Designer side ─────────────────────────────────────────────
+// ─── Shared loading screen ────────────────────────────────────────────────────
+
+function LoadingScreen() {
+  return (
+    <div className="flex items-center justify-center h-screen text-muted-foreground">
+      Loading…
+    </div>
+  );
+}
+
+// ─── Designer-side route guards ───────────────────────────────────────────────
 
 const ProtectedRoute = ({
   children,
@@ -46,7 +55,8 @@ const ProtectedRoute = ({
   const { user, loading, isAdmin, isPlatformAdmin } = useAuth();
   if (loading) return <LoadingScreen />;
   if (!user) return <Navigate to="/auth" replace />;
-  if (adminOnly && !isAdmin && !isPlatformAdmin) return <Navigate to="/dashboard" replace />;
+  if (adminOnly && !isAdmin && !isPlatformAdmin)
+    return <Navigate to="/dashboard" replace />;
   return <>{children}</>;
 };
 
@@ -62,39 +72,55 @@ const TenantGuard = ({ children }: { children: React.ReactNode }) => {
   return <>{children}</>;
 };
 
-const PlatformAdminRoute = ({ children }: { children: React.ReactNode }) => {
-  const { user, loading, isPlatformAdmin } = useAuth();
-  if (loading) return <LoadingScreen />;
-  if (!user) return <Navigate to="/auth" replace />;
-  if (!isPlatformAdmin) return <Navigate to="/dashboard" replace />;
-  return <>{children}</>;
-};
-
 const RegisterGuard = ({ children }: { children: React.ReactNode }) => {
   const { user, loading, isPlatformAdmin, tenantId } = useAuth();
   if (loading) return <LoadingScreen />;
-  if (isPlatformAdmin) return <Navigate to="/admin" replace />;
+  if (isPlatformAdmin) return <Navigate to="/admin/panel" replace />;
   if (user && tenantId) return <Navigate to="/dashboard" replace />;
   return <>{children}</>;
 };
 
+/**
+ * Platform admin panel guard.
+ * Only lets through verified platform admins.
+ * Org admins, staff, and customers are all redirected away.
+ */
+const PlatformAdminRoute = ({ children }: { children: React.ReactNode }) => {
+  const { user, loading, isPlatformAdmin } = useAuth();
+  if (loading) return <LoadingScreen />;
+  if (!user) return <Navigate to="/admin" replace />;
+  if (!isPlatformAdmin) return <Navigate to="/dashboard" replace />;
+  return <>{children}</>;
+};
+
+/**
+ * Auth gate for the public /auth route.
+ * Signed-in users are redirected based on role.
+ * Platform admins → /admin/panel (NOT /dashboard).
+ */
 const AuthGate = () => {
   const { user, loading, isPlatformAdmin } = useAuth();
   if (loading) return <LoadingScreen />;
-  if (user && isPlatformAdmin) return <Navigate to="/admin" replace />;
+  // Platform admins who somehow end up at /auth go back to their panel
+  if (user && isPlatformAdmin) return <Navigate to="/admin/panel" replace />;
   if (user) return <Navigate to="/dashboard" replace />;
   return <Auth />;
 };
 
+/**
+ * Landing page gate.
+ * Platform admins → /admin/panel.
+ * Signed-in designers → /dashboard.
+ */
 const LandingGate = () => {
   const { user, loading, isPlatformAdmin } = useAuth();
   if (loading) return <LoadingScreen />;
-  if (user && isPlatformAdmin) return <Navigate to="/admin" replace />;
+  if (user && isPlatformAdmin) return <Navigate to="/admin/panel" replace />;
   if (user) return <Navigate to="/dashboard" replace />;
   return <Landing />;
 };
 
-// ─── Route guards — Customer side ─────────────────────────────────────────────
+// ─── Customer-side route guards ───────────────────────────────────────────────
 
 const CustomerAuthGate = ({ children }: { children: React.ReactNode }) => {
   const { customer, loading } = useCustomerAuth();
@@ -102,16 +128,6 @@ const CustomerAuthGate = ({ children }: { children: React.ReactNode }) => {
   if (!customer) return <Navigate to="/customer/auth" replace />;
   return <>{children}</>;
 };
-
-// ─── Shared ───────────────────────────────────────────────────────────────────
-
-function LoadingScreen() {
-  return (
-    <div className="flex items-center justify-center h-screen text-muted-foreground">
-      Loading…
-    </div>
-  );
-}
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 
@@ -124,12 +140,25 @@ const App = () => (
         <AuthProvider>
           <CustomerAuthProvider>
             <Routes>
-              {/* ── Public routes ── */}
+              {/* ── Public ── */}
               <Route path="/" element={<LandingGate />} />
               <Route path="/auth" element={<AuthGate />} />
               <Route path="/reset-password" element={<ResetPassword />} />
               <Route path="/magazine" element={<Magazine />} />
               <Route path="/catalogue" element={<Catalogue />} />
+
+              {/* ── Platform admin — dedicated login + panel ── */}
+              {/* /admin = login page (no link from public UI)   */}
+              {/* /admin/panel = the actual panel (guarded)      */}
+              <Route path="/admin" element={<AdminLogin />} />
+              <Route
+                path="/admin/panel"
+                element={
+                  <PlatformAdminRoute>
+                    <AdminPanel />
+                  </PlatformAdminRoute>
+                }
+              />
 
               {/* ── Customer portal ── */}
               <Route path="/customer/auth" element={<CustomerAuth />} />
@@ -162,7 +191,7 @@ const App = () => (
                 }
               />
 
-              {/* ── Authenticated + tenant-scoped designer routes ── */}
+              {/* ── Authenticated designer + tenant-scoped routes ── */}
               <Route
                 element={
                   <TenantGuard>
@@ -180,19 +209,27 @@ const App = () => (
                 <Route path="/orders" element={<OrdersManagement />} />
                 <Route
                   path="/reports"
-                  element={<ProtectedRoute adminOnly><Reports /></ProtectedRoute>}
+                  element={
+                    <ProtectedRoute adminOnly>
+                      <Reports />
+                    </ProtectedRoute>
+                  }
                 />
                 <Route
                   path="/settings"
-                  element={<ProtectedRoute adminOnly><OrganizationSettings /></ProtectedRoute>}
+                  element={
+                    <ProtectedRoute adminOnly>
+                      <OrganizationSettings />
+                    </ProtectedRoute>
+                  }
                 />
                 <Route
                   path="/staff"
-                  element={<ProtectedRoute adminOnly><StaffManagement /></ProtectedRoute>}
-                />
-                <Route
-                  path="/admin"
-                  element={<PlatformAdminRoute><AdminPanel /></PlatformAdminRoute>}
+                  element={
+                    <ProtectedRoute adminOnly>
+                      <StaffManagement />
+                    </ProtectedRoute>
+                  }
                 />
               </Route>
 
