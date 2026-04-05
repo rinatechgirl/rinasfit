@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Loader2, ArrowRight, Eye, EyeOff, ShieldAlert } from "lucide-react";
+import { Loader2, ArrowRight, Eye, EyeOff } from "lucide-react";
 import fallbackLogo from "@/assets/logo.jpeg";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -34,6 +34,8 @@ function FullPageSpinner() {
 }
 
 // ─── Mode 1: Branded tenant login (slug.rinasfit.com/auth) ───────────────────
+// Only designers / staff of that specific org can sign in here.
+// Platform admins and customers are both blocked.
 
 function TenantLogin({ slug }: { slug: string }) {
   const navigate = useNavigate();
@@ -48,7 +50,10 @@ function TenantLogin({ slug }: { slug: string }) {
     e.preventDefault();
     setLoading(true);
 
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
 
     if (error) {
       toast.error(error.message);
@@ -56,23 +61,40 @@ function TenantLogin({ slug }: { slug: string }) {
       return;
     }
 
-    // ── SECURITY CHECK: block platform admins from tenant login pages ─────────
-    // Platform admins have no tenant and should only log in at rinasfit.com/auth
+    // ── Block platform admins ─────────────────────────────────────────────────
     const { data: isPlatAdmin } = await supabase.rpc("is_platform_admin");
     if (isPlatAdmin === true) {
       await supabase.auth.signOut();
-      toast.error(
-        "Platform administrators cannot sign in through a business portal. Please use the main Rina's Fit login."
-      );
+      toast.error("Platform administrators must sign in at rinasfit.com/admin.");
       setLoading(false);
       return;
     }
 
-    // ── SECURITY CHECK: block customers from designer login ───────────────────
+    // ── Block customers ───────────────────────────────────────────────────────
     if (data.user?.user_metadata?.role === "customer") {
       await supabase.auth.signOut();
+      toast.error("Please sign in at rinasfit.com/customer/auth instead.");
+      setLoading(false);
+      return;
+    }
+
+    // ── Verify the user actually belongs to THIS tenant ───────────────────────
+    const { data: roleData } = await supabase
+      .from("user_roles")
+      .select("tenant_id")
+      .eq("user_id", data.user!.id)
+      .maybeSingle();
+
+    const { data: tenantData } = await supabase
+      .from("tenants")
+      .select("id")
+      .eq("slug", slug)
+      .maybeSingle();
+
+    if (!roleData?.tenant_id || roleData.tenant_id !== tenantData?.id) {
+      await supabase.auth.signOut();
       toast.error(
-        "This is a designer login page. Please sign in at rinasfit.com/customer/auth."
+        "Your account does not belong to this organisation. Please sign in through your own portal."
       );
       setLoading(false);
       return;
@@ -239,18 +261,13 @@ function TenantLogin({ slug }: { slug: string }) {
 }
 
 // ─── Mode 2: Slug discovery (rinasfit.com/auth) ───────────────────────────────
+// Designers enter their business slug → redirected to their own subdomain.
+// No email/password form here at all. No admin login link visible.
 
 function SlugDiscovery() {
   const navigate = useNavigate();
-  const [mode, setMode] = useState<"business" | "admin">("business");
-
   const [slug, setSlug] = useState("");
   const [slugLoading, setSlugLoading] = useState(false);
-
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [adminLoading, setAdminLoading] = useState(false);
 
   const handleSlugSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -285,46 +302,6 @@ function SlugDiscovery() {
     }
 
     redirectToTenantSubdomain(data.slug);
-  };
-
-  const handleAdminLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAdminLoading(true);
-
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-
-    if (error) {
-      toast.error(error.message);
-      setAdminLoading(false);
-      return;
-    }
-
-    // ── SECURITY CHECK: verify the user is actually a platform admin ──────────
-    // Organisation admins have role = 'admin' in user_roles but are NOT platform admins.
-    // They must NOT be able to access the platform admin panel.
-    const { data: isPlatAdmin } = await supabase.rpc("is_platform_admin");
-
-    if (isPlatAdmin !== true) {
-      // Sign them out immediately — wrong login form
-      await supabase.auth.signOut();
-
-      // Give a helpful error based on who they likely are
-      if (data.user?.user_metadata?.role === "customer") {
-        toast.error(
-          "This is the platform admin login. Customers should sign in at rinasfit.com/customer/auth"
-        );
-      } else {
-        toast.error(
-          "This account is not a platform administrator. Please sign in through your organisation's portal instead."
-        );
-      }
-      setAdminLoading(false);
-      return;
-    }
-
-    // Verified platform admin — proceed
-    navigate("/admin", { replace: true });
-    setAdminLoading(false);
   };
 
   return (
@@ -364,106 +341,46 @@ function SlugDiscovery() {
 
           <div>
             <h1 className="text-xl font-semibold text-foreground">
-              {mode === "business" ? "Sign in to your organisation" : "Platform admin sign in"}
+              Sign in to your organisation
             </h1>
             <p className="text-sm text-muted-foreground mt-1">
-              {mode === "business"
-                ? "Enter your business username to continue"
-                : "Restricted to Rina's Fit platform administrators only"}
+              Enter your business username to continue to your portal.
             </p>
           </div>
 
-          {/* Platform admin warning banner */}
-          {mode === "admin" && (
-            <div className="flex items-start gap-3 p-3 bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/30 rounded-lg">
-              <ShieldAlert className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-              <p className="text-xs text-amber-800 dark:text-amber-400 leading-relaxed">
-                This login is for <strong>Rina's Fit platform administrators only</strong>.
-                If you're a fashion designer or organisation admin, please sign in through your business portal instead.
-              </p>
-            </div>
-          )}
-
-          {/* Business slug lookup */}
-          {mode === "business" && (
-            <form onSubmit={handleSlugSubmit} className="space-y-5">
-              <div className="space-y-2">
-                <Label htmlFor="slug">Business username</Label>
-                <div className="flex">
-                  <Input
-                    id="slug"
-                    type="text"
-                    placeholder="yourbusiness"
-                    value={slug}
-                    onChange={(e) =>
-                      setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))
-                    }
-                    required
-                    autoFocus
-                    className="rounded-r-none border-r-0 focus-visible:z-10"
-                  />
-                  <span className="inline-flex items-center px-3 border border-input bg-muted text-muted-foreground text-sm rounded-r-md shrink-0">
-                    .rinasfit.com
-                  </span>
-                </div>
-              </div>
-
-              <Button type="submit" className="w-full" disabled={slugLoading}>
-                {slugLoading ? (
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                ) : (
-                  <ArrowRight className="w-4 h-4 mr-2" />
-                )}
-                Continue
-              </Button>
-            </form>
-          )}
-
-          {/* Platform admin email + password */}
-          {mode === "admin" && (
-            <form onSubmit={handleAdminLogin} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="admin-email">Email</Label>
+          <form onSubmit={handleSlugSubmit} className="space-y-5">
+            <div className="space-y-2">
+              <Label htmlFor="slug">Business username</Label>
+              <div className="flex">
                 <Input
-                  id="admin-email"
-                  type="email"
-                  placeholder="admin@rinasfit.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  id="slug"
+                  type="text"
+                  placeholder="yourbusiness"
+                  value={slug}
+                  onChange={(e) =>
+                    setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))
+                  }
                   required
                   autoFocus
+                  className="rounded-r-none border-r-0 focus-visible:z-10"
                 />
+                <span className="inline-flex items-center px-3 border border-input bg-muted text-muted-foreground text-sm rounded-r-md shrink-0">
+                  .rinasfit.com
+                </span>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="admin-password">Password</Label>
-                <div className="relative">
-                  <Input
-                    id="admin-password"
-                    type={showPassword ? "text" : "password"}
-                    placeholder="••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    className="pr-10"
-                  />
-                  <button
-                    type="button"
-                    tabIndex={-1}
-                    onClick={() => setShowPassword((v) => !v)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  >
-                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-              <Button type="submit" className="w-full" disabled={adminLoading}>
-                {adminLoading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                Sign in as Platform Admin
-              </Button>
-            </form>
-          )}
+            </div>
 
-          <div className="space-y-3 text-center">
+            <Button type="submit" className="w-full" disabled={slugLoading}>
+              {slugLoading ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <ArrowRight className="w-4 h-4 mr-2" />
+              )}
+              Continue to my portal
+            </Button>
+          </form>
+
+          <div className="space-y-2 text-center">
             <p className="text-sm text-muted-foreground">
               New business?{" "}
               <a
@@ -473,20 +390,15 @@ function SlugDiscovery() {
                 Create an account
               </a>
             </p>
-            <button
-              type="button"
-              onClick={() => {
-                setMode(mode === "business" ? "admin" : "business");
-                setSlug("");
-                setEmail("");
-                setPassword("");
-              }}
-              className="text-xs text-muted-foreground hover:text-foreground transition-colors underline-offset-4 hover:underline"
-            >
-              {mode === "business"
-                ? "Platform admin sign in →"
-                : "← Back to business login"}
-            </button>
+            <p className="text-sm text-muted-foreground">
+              Looking for designs?{" "}
+              <a
+                href="/customer/auth"
+                className="text-foreground font-medium hover:underline underline-offset-4"
+              >
+                Customer sign in
+              </a>
+            </p>
           </div>
         </div>
       </div>
