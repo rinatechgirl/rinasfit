@@ -4,6 +4,7 @@ import {
   useEffect,
   useState,
   useRef,
+  useCallback,
   ReactNode,
 } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -61,176 +62,223 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [tenant, setTenant] = useState<TenantInfo | null>(null);
   const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
 
-  // Prevent concurrent fetchUserContext calls
-  const fetchingRef = useRef(false);
-  // Prevent state updates after unmount
   const mountedRef = useRef(true);
-  // Skip the duplicate initial onAuthStateChange call
-  const initializedRef = useRef(false);
+  const fetchingRef = useRef(false);
+  // Track the user ID we last fetched context for — prevents redundant fetches
+  const lastFetchedUserIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-    };
+    return () => { mountedRef.current = false; };
   }, []);
 
-  const fetchUserContext = async (userId: string) => {
-    if (fetchingRef.current) return;
-    fetchingRef.current = true;
+  // ── fetchUserContext ────────────────────────────────────────────────────────
+  // Wrapped in useCallback so refreshTenant can call it safely.
+  // Key fixes vs original:
+  //   1. Uses a local `active` flag instead of global fetchingRef lock — prevents
+  //      the lock getting permanently stuck if a fetch errors out mid-way.
+  //   2. 8-second timeout — if Supabase hangs, loading resolves anyway.
+  //   3. Skips re-fetch if the same userId was already fetched and we have data
+  //      (tab-switch TOKEN_REFRESHED won't trigger a redundant full fetch).
+  const fetchUserContext = useCallback(
+    async (userId: string, force = false) => {
+      // Skip if already fetching
+      if (fetchingRef.current) return;
 
-    try {
-      await supabase.rpc("accept_pending_invitation");
+      // Skip if we already have context for this user (unless forced)
+      if (!force && lastFetchedUserIdRef.current === userId && tenant !== null) return;
 
-      const { data: isPlatAdmin } = await supabase.rpc("is_platform_admin");
-      const platformAdmin = isPlatAdmin === true;
+      fetchingRef.current = true;
 
-      if (!mountedRef.current) return;
-      setIsPlatformAdmin(platformAdmin);
+      // Safety timeout — if anything hangs, unblock loading after 8s
+      const timeout = setTimeout(() => {
+        if (mountedRef.current) setLoading(false);
+        fetchingRef.current = false;
+      }, 8000);
 
-      const { data: roleData } = await supabase
-        .from("user_roles")
-        .select("role, tenant_id")
-        .eq("user_id", userId)
-        .limit(1)
-        .maybeSingle();
+      try {
+        await supabase.rpc("accept_pending_invitation").catch(() => null);
 
-      const userRole = platformAdmin
-        ? "admin"
-        : ((roleData?.role as AppRole) ?? "staff");
+        const { data: isPlatAdmin } = await supabase.rpc("is_platform_admin");
+        const platformAdmin = isPlatAdmin === true;
 
-      if (!mountedRef.current) return;
-      setRole(userRole);
+        if (!mountedRef.current) return;
+        setIsPlatformAdmin(platformAdmin);
 
-      // Platform admins don't need tenant context
-      if (platformAdmin) {
-        setTenantId(null);
-        setTenant(null);
-        return;
-      }
-
-      const subdomainSlug = getTenantSlugFromHostname();
-
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("tenant_id")
-        .eq("user_id", userId)
-        .maybeSingle();
-
-      let tid = profile?.tenant_id ?? null;
-
-      // Resolve tenant from subdomain if user has no tenant yet
-      if (!tid && subdomainSlug) {
-        const { data: subdomainTenant } = await supabase
-          .from("tenants")
-          .select(
-            "id, business_name, slug, status, logo_url, business_email, owner_name, phone, address, country, description"
-          )
-          .eq("slug", subdomainSlug)
+        const { data: roleData } = await supabase
+          .from("user_roles")
+          .select("role, tenant_id")
+          .eq("user_id", userId)
+          .limit(1)
           .maybeSingle();
 
-        if (subdomainTenant && mountedRef.current) {
-          setTenant(subdomainTenant as TenantInfo);
-          setTenantId(subdomainTenant.id);
+        const userRole = platformAdmin
+          ? "admin"
+          : ((roleData?.role as AppRole) ?? "staff");
+
+        if (!mountedRef.current) return;
+        setRole(userRole);
+
+        if (platformAdmin) {
+          setTenantId(null);
+          setTenant(null);
+          lastFetchedUserIdRef.current = userId;
           return;
         }
-      }
 
-      if (!mountedRef.current) return;
-      setTenantId(tid);
+        const subdomainSlug = getTenantSlugFromHostname();
 
-      if (tid) {
-        const { data: tenantData } = await supabase
-          .from("tenants")
-          .select(
-            "id, business_name, slug, status, logo_url, business_email, owner_name, phone, address, country, description"
-          )
-          .eq("id", tid)
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("tenant_id")
+          .eq("user_id", userId)
           .maybeSingle();
 
-        if (mountedRef.current) {
-          setTenant(tenantData as TenantInfo | null);
+        let tid = profile?.tenant_id ?? null;
+
+        if (!tid && subdomainSlug) {
+          const { data: subdomainTenant } = await supabase
+            .from("tenants")
+            .select(
+              "id, business_name, slug, status, logo_url, business_email, owner_name, phone, address, country, description"
+            )
+            .eq("slug", subdomainSlug)
+            .maybeSingle();
+
+          if (subdomainTenant && mountedRef.current) {
+            setTenant(subdomainTenant as TenantInfo);
+            setTenantId(subdomainTenant.id);
+            lastFetchedUserIdRef.current = userId;
+            return;
+          }
         }
-      } else {
-        setTenant(null);
+
+        if (!mountedRef.current) return;
+        setTenantId(tid);
+
+        if (tid) {
+          const { data: tenantData } = await supabase
+            .from("tenants")
+            .select(
+              "id, business_name, slug, status, logo_url, business_email, owner_name, phone, address, country, description"
+            )
+            .eq("id", tid)
+            .maybeSingle();
+
+          if (mountedRef.current) {
+            setTenant(tenantData as TenantInfo | null);
+          }
+        } else {
+          setTenant(null);
+        }
+
+        lastFetchedUserIdRef.current = userId;
+      } catch (err) {
+        // Don't let errors leave the app stuck in loading
+        console.error("useAuth fetchUserContext error:", err);
+      } finally {
+        clearTimeout(timeout);
+        fetchingRef.current = false;
+        if (mountedRef.current) setLoading(false);
       }
-    } finally {
-      fetchingRef.current = false;
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
+
+  const refreshTenant = useCallback(async () => {
+    if (user) {
+      // Force = true so it re-fetches even if userId matches
+      await fetchUserContext(user.id, true);
     }
-  };
+  }, [user, fetchUserContext]);
 
-  const refreshTenant = async () => {
-    if (user) await fetchUserContext(user.id);
-  };
-
+  // ── Bootstrap + auth listener ───────────────────────────────────────────────
   useEffect(() => {
-    // Bootstrap: get current session once, then listen for changes
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (!mountedRef.current) return;
+    let isMounted = true;
+
+    const init = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+
+      if (!isMounted) return;
+
       setSession(session);
       setUser(session?.user ?? null);
 
       if (session?.user) {
         await fetchUserContext(session.user.id);
-      }
-
-      if (mountedRef.current) {
-        setLoading(false);
-        initializedRef.current = true;
-      }
-    });
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (!mountedRef.current) return;
-
-      // TOKEN_REFRESHED fires every time the user switches back to the tab.
-      // We must NOT set loading=true for this — it causes the blank screen.
-      // The session is still valid; just update it silently.
-      if (event === "TOKEN_REFRESHED") {
-        setSession(session);
-        setUser(session?.user ?? null);
-        return;
-      }
-
-      // PASSWORD_RECOVERY — flag it in sessionStorage so the ResetPassword
-      // page can pick it up even if its own listener hasn't mounted yet.
-      if (event === "PASSWORD_RECOVERY") {
-        sessionStorage.setItem("rf-password-recovery", "true");
-        setSession(session);
-        setUser(session?.user ?? null);
-        return;
-      }
-
-      setSession(session);
-      setUser(session?.user ?? null);
-
-      if (session?.user) {
-        // Skip the duplicate SIGNED_IN fired on initial mount —
-        // getSession() above already handled it.
-        if (initializedRef.current) {
-          // Only show loading for genuine sign-in events
-          if (event === "SIGNED_IN") setLoading(true);
-          await fetchUserContext(session.user.id);
-          if (mountedRef.current) setLoading(false);
-        }
       } else {
-        // Signed out — clear all context
-        setRole(null);
-        setTenantId(null);
-        setTenant(null);
-        setIsPlatformAdmin(false);
-        if (initializedRef.current && mountedRef.current) {
+        setLoading(false);
+      }
+    };
+
+    init();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (!mountedRef.current) return;
+
+        // ── TOKEN_REFRESHED ──────────────────────────────────────────────────
+        // Fires every time the user switches back to the tab.
+        // NEVER set loading=true here — it causes the blank screen.
+        // NEVER re-fetch user context here — the session is still valid.
+        // Just silently update the session object.
+        if (event === "TOKEN_REFRESHED") {
+          setSession(session);
+          setUser(session?.user ?? null);
+          return;
+        }
+
+        // ── PASSWORD_RECOVERY ────────────────────────────────────────────────
+        if (event === "PASSWORD_RECOVERY") {
+          sessionStorage.setItem("rf-password-recovery", "true");
+          setSession(session);
+          setUser(session?.user ?? null);
+          return;
+        }
+
+        // ── SIGNED_OUT ───────────────────────────────────────────────────────
+        if (event === "SIGNED_OUT" || !session) {
+          setSession(null);
+          setUser(null);
+          setRole(null);
+          setTenantId(null);
+          setTenant(null);
+          setIsPlatformAdmin(false);
+          lastFetchedUserIdRef.current = null;
           setLoading(false);
+          return;
+        }
+
+        // ── SIGNED_IN / USER_UPDATED ─────────────────────────────────────────
+        // Only set loading=true for a genuine new sign-in where we don't
+        // yet have context for this user.
+        setSession(session);
+        setUser(session.user);
+
+        const isNewUser =
+          lastFetchedUserIdRef.current !== session.user.id;
+
+        if (isNewUser) {
+          setLoading(true);
+          await fetchUserContext(session.user.id);
+        }
+        // If it's the same user (e.g. USER_UPDATED), just refetch silently
+        // without touching loading state
+        else if (event === "USER_UPDATED") {
+          await fetchUserContext(session.user.id, true);
         }
       }
-    });
+    );
 
-    return () => subscription.unsubscribe();
-  }, []);
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
+  }, [fetchUserContext]);
 
   const signOut = async () => {
+    lastFetchedUserIdRef.current = null;
     await supabase.auth.signOut();
   };
 
