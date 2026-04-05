@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 import fallbackLogo from "@/assets/logo.jpeg";
+import PaystackSettings from "@/components/customer/PaystackSettings";
 
 interface TeamMember {
   id: string;
@@ -668,6 +669,12 @@ const OrganizationSettings = () => {
             </Card>
           </div>
         </TabsContent>
+
+        <TabsTrigger value="payment">Payment</TabsTrigger>
+        <TabsContent value="payment">
+          <PaystackSettings />
+        </TabsContent>
+        
       </Tabs>
     </div>
   );
