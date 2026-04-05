@@ -31,7 +31,7 @@ import CustomerDashboard from "@/pages/CustomerDashboard";
 import OrdersManagement from "@/pages/OrdersManagement";
 import DesignerInbox from "@/components/customer/DesignerInbox";
 
-const queryClient = new QueryClient();
+import { queryClient } from "@/queryClient";
 
 // ─── Shared loading screen ────────────────────────────────────────────────────
 
