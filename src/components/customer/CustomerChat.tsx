@@ -34,32 +34,30 @@ const CustomerChat = ({ tenantId, tenantName, customerId, orderId, onClose }: Pr
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  // Load existing messages
   const fetchMessages = async () => {
-    const { data } = await supabase
-      .from("chat_messages")
+    const { data } = await (supabase
+      .from("chat_messages" as any)
       .select("id, sender_type, sender_id, message, created_at, is_read")
       .eq("tenant_id", tenantId)
       .eq("customer_user_id", customerId)
-      .order("created_at", { ascending: true });
+      .order("created_at", { ascending: true }) as any);
 
     setMessages((data as Message[]) ?? []);
     setLoading(false);
 
     // Mark designer messages as read
-    await supabase
-      .from("chat_messages")
-      .update({ is_read: true })
+    await (supabase
+      .from("chat_messages" as any)
+      .update({ is_read: true } as any)
       .eq("tenant_id", tenantId)
       .eq("customer_user_id", customerId)
       .eq("sender_type", "designer")
-      .eq("is_read", false);
+      .eq("is_read", false) as any);
   };
 
   useEffect(() => {
     fetchMessages();
 
-    // Real-time subscription
     const channel = supabase
       .channel(`chat:${tenantId}:${customerId}`)
       .on(
@@ -95,7 +93,6 @@ const CustomerChat = ({ tenantId, tenantName, customerId, orderId, onClose }: Pr
     setSending(true);
     setInput("");
 
-    // Optimistic update
     const tempId = `temp-${Date.now()}`;
     const tempMsg: Message = {
       id: tempId,
@@ -107,20 +104,19 @@ const CustomerChat = ({ tenantId, tenantName, customerId, orderId, onClose }: Pr
     };
     setMessages((prev) => [...prev, tempMsg]);
 
-    const { error } = await supabase.from("chat_messages").insert({
+    const { error } = await (supabase.from("chat_messages" as any).insert({
       tenant_id: tenantId,
       customer_user_id: customerId,
       sender_type: "customer",
       sender_id: customerId,
       message: text,
       order_id: orderId ?? null,
-    });
+    } as any) as any);
 
     if (error) {
       setMessages((prev) => prev.filter((m) => m.id !== tempId));
       setInput(text);
     } else {
-      // Replace temp with real from DB
       fetchMessages();
     }
 

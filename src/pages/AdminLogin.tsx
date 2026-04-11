@@ -9,19 +9,15 @@ import { toast } from "sonner";
 import { Loader2, Eye, EyeOff, ShieldCheck } from "lucide-react";
 import fallbackLogo from "@/assets/logo.jpeg";
 
-// ─── AdminLogin ───────────────────────────────────────────────────────────────
-// This page lives at /admin.
-// It is NOT linked from anywhere in the public UI — platform admins know this URL.
-// Only users who pass the is_platform_admin() RPC check are allowed through.
-
 const AdminLogin = () => {
   const navigate = useNavigate();
-  const { isPlatformAdmin, loading: authLoading } = useAuth();
+  const { isPlatformAdmin, loading: authLoading, user } = useAuth();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [awaitingAuth, setAwaitingAuth] = useState(false);
 
   // If already signed in as platform admin, go straight to panel
   if (!authLoading && isPlatformAdmin) {
@@ -29,11 +25,29 @@ const AdminLogin = () => {
     return null;
   }
 
+  // After sign-in, wait for auth context to confirm platform admin
+  if (awaitingAuth && authLoading) {
+    return (
+      <div className="flex items-center justify-center h-screen text-muted-foreground gap-2">
+        <Loader2 className="w-5 h-5 animate-spin" />
+        <span>Verifying admin access…</span>
+      </div>
+    );
+  }
+
+  // If awaiting auth resolved but not platform admin, show error
+  if (awaitingAuth && !authLoading && !isPlatformAdmin && user) {
+    // Not a platform admin — sign them out
+    supabase.auth.signOut();
+    setAwaitingAuth(false);
+    toast.error("This login is for platform administrators only.");
+  }
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
-    const { data, error } = await supabase.auth.signInWithPassword({
+    const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
@@ -44,27 +58,8 @@ const AdminLogin = () => {
       return;
     }
 
-    // Verify platform admin status — the ONLY check that matters here
-    const { data: isPlatAdmin } = await supabase.rpc("is_platform_admin");
-
-    if (isPlatAdmin !== true) {
-      // Sign out immediately — wrong person, wrong page
-      await supabase.auth.signOut();
-
-      if (data.user?.user_metadata?.role === "customer") {
-        toast.error("Customers should sign in at rinasfit.com/customer/auth.");
-      } else {
-        // Org admin or staff trying to use this page
-        toast.error(
-          "This login is for Rina's Fit platform administrators only. Please sign in through your organisation's portal."
-        );
-      }
-      setLoading(false);
-      return;
-    }
-
-    // Verified — go to admin panel
-    navigate("/admin/panel", { replace: true });
+    // Set awaiting flag and let auth context resolve
+    setAwaitingAuth(true);
     setLoading(false);
   };
 
@@ -142,7 +137,7 @@ const AdminLogin = () => {
           </Button>
         </form>
 
-        {/* Back link — subtle, not prominent */}
+        {/* Back link */}
         <div className="text-center">
           <a
             href="/"
