@@ -27,7 +27,8 @@ interface Design {
 interface Category { id: string; name: string; }
 
 const Designs = () => {
-  const { isAdmin, user, tenantId } = useAuth();
+  const { isAdmin, user, tenantId, isPlatformAdmin } = useAuth();
+  const canManage = isAdmin || isPlatformAdmin;
   const [designs, setDesigns] = useState<Design[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [search, setSearch] = useState("");
@@ -142,7 +143,7 @@ const Designs = () => {
   // ── Publish / unpublish toggle ─────────────────────────────────────────────
   const togglePublish = async (design: Design, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!isAdmin) return;
+    if (!canManage) return;
     setTogglingId(design.id);
 
     const newValue = !design.is_public;
@@ -171,7 +172,7 @@ const Designs = () => {
           <h1 className="text-2xl font-display font-bold text-foreground">Fashion Catalogue</h1>
           <p className="text-muted-foreground text-sm mt-1">Browse and manage your design collection</p>
         </div>
-        {isAdmin && (
+        {canManage && (
           <Dialog open={dialogOpen} onOpenChange={(o) => { setDialogOpen(o); if (!o) resetForm(); }}>
             <DialogTrigger asChild>
               <Button className="gap-2"><Plus className="w-4 h-4" />Add Design</Button>
@@ -312,7 +313,7 @@ const Designs = () => {
                   )}
 
                   {/* Admin controls */}
-                  {isAdmin && (
+                  {canManage && (
                     <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
                       {/* Publish toggle */}
                       <Button
