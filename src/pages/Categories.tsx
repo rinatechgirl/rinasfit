@@ -13,7 +13,8 @@ import { Plus, Pencil, Trash2, FolderOpen } from "lucide-react";
 interface Category { id: string; name: string; description: string | null; created_at: string; }
 
 const Categories = () => {
-  const { isAdmin, tenantId } = useAuth();
+  const { isAdmin, tenantId, isPlatformAdmin } = useAuth();
+  const canManage = isAdmin || isPlatformAdmin;
   const [categories, setCategories] = useState<Category[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -60,7 +61,7 @@ const Categories = () => {
           <h1 className="text-2xl font-display font-bold text-foreground">Categories</h1>
           <p className="text-muted-foreground text-sm mt-1">Organize your design collection</p>
         </div>
-        {isAdmin && (
+        {canManage && (
           <Dialog open={dialogOpen} onOpenChange={(o) => { setDialogOpen(o); if (!o) { setEditingId(null); setName(""); setDescription(""); } }}>
             <DialogTrigger asChild>
               <Button><Plus className="w-4 h-4 mr-2" />Add Category</Button>
@@ -94,7 +95,7 @@ const Categories = () => {
                       {c.description && <p className="text-xs text-muted-foreground mt-1">{c.description}</p>}
                     </div>
                   </div>
-                  {isAdmin && (
+                  {canManage && (
                     <div className="flex gap-1">
                       <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setName(c.name); setDescription(c.description ?? ""); setEditingId(c.id); setDialogOpen(true); }}><Pencil className="w-3.5 h-3.5" /></Button>
                       <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleDelete(c.id)}><Trash2 className="w-3.5 h-3.5 text-destructive" /></Button>
