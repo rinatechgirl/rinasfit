@@ -1,261 +1,332 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Send, Loader2, MessageCircle, User } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Loader2, MessageCircle, Send, User, ArrowLeft } from "lucide-react";
 import { format } from "date-fns";
+import { toast } from "sonner";
+import fallbackLogo from "@/assets/logo.jpeg";
+
+interface Conversation {
+  customerId: string;
+  customerName: string;
+  lastMessage: string;
+  lastMessageAt: string;
+  unreadCount: number;
+}
 
 interface Message {
   id: string;
-  sender_type: "customer" | "designer";
-  sender_id: string;
   message: string;
+  sender_type: "customer" | "designer";
   created_at: string;
   is_read: boolean;
 }
 
-interface Conversation {
-  customer_user_id: string;
-  customer_name: string;
-  last_message: string;
-  unread: number;
-}
-
 const DesignerInbox = () => {
-  const { user, tenantId, tenant } = useAuth();
-  const [convos, setConvos] = useState<Conversation[]>([]);
+  const { tenantId } = useAuth();
+
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [loadingConvos, setLoadingConvos] = useState(true);
   const [activeCustomerId, setActiveCustomerId] = useState<string | null>(null);
+  const [activeCustomerName, setActiveCustomerName] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState("");
+  const [loadingMessages, setLoadingMessages] = useState(false);
+  const [newMessage, setNewMessage] = useState("");
   const [sending, setSending] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const fetchConversations = async () => {
+  // ── Load conversation list ─────────────────────────────────────────────────
+  const loadConversations = async () => {
     if (!tenantId) return;
+    setLoadingConvos(true);
 
-    const { data } = await (supabase
-      .from("chat_messages" as any)
+    const { data, error } = await supabase
+      .from("chat_messages")
       .select("customer_user_id, message, created_at, is_read, sender_type")
       .eq("tenant_id", tenantId)
-      .order("created_at", { ascending: false }) as any);
+      .order("created_at", { ascending: false });
 
-    if (!data) { setLoading(false); return; }
+    if (error) { toast.error(error.message); setLoadingConvos(false); return; }
 
-    // Get unique customer IDs and fetch their names
-    const customerIds = [...new Set((data as any[]).map((m: any) => m.customer_user_id))];
-    const { data: accounts } = await (supabase
-      .from("customer_accounts" as any)
-      .select("user_id, full_name")
-      .in("user_id", customerIds) as any);
-
-    const nameMap = new Map<string, string>();
-    (accounts ?? []).forEach((a: any) => nameMap.set(a.user_id, a.full_name));
-
+    // Group by customer
     const map = new Map<string, Conversation>();
-    (data as any[]).forEach((msg: any) => {
+    const customerIds = new Set<string>();
+
+    (data ?? []).forEach((msg: any) => {
+      customerIds.add(msg.customer_user_id);
       if (!map.has(msg.customer_user_id)) {
         map.set(msg.customer_user_id, {
-          customer_user_id: msg.customer_user_id,
-          customer_name: nameMap.get(msg.customer_user_id) ?? "Customer",
-          last_message: msg.message,
-          unread: !msg.is_read && msg.sender_type === "customer" ? 1 : 0,
+          customerId: msg.customer_user_id,
+          customerName: msg.customer_user_id, // placeholder, resolved below
+          lastMessage: msg.message,
+          lastMessageAt: msg.created_at,
+          unreadCount: (!msg.is_read && msg.sender_type === "customer") ? 1 : 0,
         });
       } else if (!msg.is_read && msg.sender_type === "customer") {
-        map.get(msg.customer_user_id)!.unread++;
+        map.get(msg.customer_user_id)!.unreadCount++;
       }
     });
 
-    setConvos(Array.from(map.values()));
-    setLoading(false);
+    // Resolve customer names from customer_accounts
+    if (customerIds.size > 0) {
+      const { data: accounts } = await (supabase
+        .from("customer_accounts" as any)
+        .select("user_id, full_name")
+        .in("user_id", Array.from(customerIds)) as any);
+
+      (accounts ?? []).forEach((a: any) => {
+        if (map.has(a.user_id)) {
+          map.get(a.user_id)!.customerName = a.full_name || a.user_id;
+        }
+      });
+    }
+
+    setConversations(Array.from(map.values()));
+    setLoadingConvos(false);
   };
 
-  const fetchMessages = async (customerId: string) => {
-    if (!tenantId) return;
+  useEffect(() => { loadConversations(); }, [tenantId]);
 
-    const { data } = await (supabase
-      .from("chat_messages" as any)
-      .select("id, sender_type, sender_id, message, created_at, is_read")
+  // ── Load messages for selected conversation ────────────────────────────────
+  const loadMessages = async (customerId: string) => {
+    if (!tenantId) return;
+    setLoadingMessages(true);
+
+    const { data, error } = await supabase
+      .from("chat_messages")
+      .select("id, message, sender_type, created_at, is_read")
       .eq("tenant_id", tenantId)
       .eq("customer_user_id", customerId)
-      .order("created_at", { ascending: true }) as any);
+      .order("created_at", { ascending: true });
 
-    setMessages((data as Message[]) ?? []);
+    if (error) toast.error(error.message);
+    else setMessages((data as Message[]) ?? []);
 
     // Mark customer messages as read
-    await (supabase
-      .from("chat_messages" as any)
+    await supabase
+      .from("chat_messages")
       .update({ is_read: true } as any)
       .eq("tenant_id", tenantId)
       .eq("customer_user_id", customerId)
-      .eq("sender_type", "customer")
-      .eq("is_read", false) as any);
+      .eq("sender_type", "customer");
 
-    setConvos((prev) =>
-      prev.map((c) => c.customer_user_id === customerId ? { ...c, unread: 0 } : c)
-    );
+    setLoadingMessages(false);
   };
 
   useEffect(() => {
-    fetchConversations();
+    if (activeCustomerId) loadMessages(activeCustomerId);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeCustomerId]);
 
-    if (!tenantId) return;
+  // ── Realtime subscription ──────────────────────────────────────────────────
+  useEffect(() => {
+    if (!tenantId || !activeCustomerId) return;
+
     const channel = supabase
-      .channel(`designer-inbox:${tenantId}`)
+      .channel(`designer-inbox-${tenantId}-${activeCustomerId}`)
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "chat_messages", filter: `tenant_id=eq.${tenantId}` },
-        () => { fetchConversations(); if (activeCustomerId) fetchMessages(activeCustomerId); }
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "chat_messages",
+          filter: `tenant_id=eq.${tenantId}`,
+        },
+        (payload) => {
+          const msg = payload.new as any;
+          if (msg.customer_user_id === activeCustomerId) {
+            setMessages((prev) => [...prev, msg as Message]);
+            // Mark as read immediately since we're looking at it
+            supabase
+              .from("chat_messages")
+              .update({ is_read: true } as any)
+              .eq("id", msg.id);
+          } else {
+            // New message from a different customer — refresh conversation list
+            loadConversations();
+          }
+        }
       )
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tenantId]);
+  }, [tenantId, activeCustomerId]);
 
+  // ── Auto-scroll to bottom ─────────────────────────────────────────────────
   useEffect(() => {
-    if (activeCustomerId) fetchMessages(activeCustomerId);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeCustomerId]);
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const sendMessage = async () => {
-    const text = input.trim();
-    if (!text || sending || !user || !tenantId || !activeCustomerId) return;
+  // ── Send message ──────────────────────────────────────────────────────────
+  const handleSend = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newMessage.trim() || !activeCustomerId || !tenantId) return;
     setSending(true);
-    setInput("");
 
-    await (supabase.from("chat_messages" as any).insert({
+    const { error } = await supabase.from("chat_messages").insert({
       tenant_id: tenantId,
       customer_user_id: activeCustomerId,
+      message: newMessage.trim(),
       sender_type: "designer",
-      sender_id: user.id,
-      message: text,
-    } as any) as any);
+      is_read: false,
+    } as any);
 
-    fetchMessages(activeCustomerId);
+    if (error) toast.error(error.message);
+    else setNewMessage("");
+
     setSending(false);
   };
 
-  const activeConvo = convos.find((c) => c.customer_user_id === activeCustomerId);
+  const openConversation = (convo: Conversation) => {
+    setActiveCustomerId(convo.customerId);
+    setActiveCustomerName(convo.customerName);
+  };
+
+  // ─── Layout ───────────────────────────────────────────────────────────────
 
   return (
-    <div className="space-y-4 animate-fade-in">
-      <div>
+    <div className="animate-fade-in h-[calc(100vh-8rem)] flex flex-col">
+      <div className="mb-4">
         <h1 className="text-2xl font-display font-bold text-foreground">Customer Inbox</h1>
-        <p className="text-muted-foreground text-sm mt-1">Chat with customers interested in your designs</p>
+        <p className="text-muted-foreground text-sm mt-1">
+          Chat with customers who've placed orders or enquiries.
+        </p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-4 h-[600px]">
-        {/* Conversations list */}
-        <Card className="border-border/60 overflow-hidden flex flex-col">
-          <CardHeader className="pb-3 shrink-0">
-            <CardTitle className="text-sm font-medium">Conversations</CardTitle>
-          </CardHeader>
-          <div className="flex-1 overflow-y-auto">
-            {loading ? (
-              <div className="flex items-center justify-center h-20">
-                <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-              </div>
-            ) : convos.length === 0 ? (
-              <div className="text-center py-8 px-4">
-                <MessageCircle className="w-8 h-8 mx-auto mb-2 text-muted-foreground/30" />
-                <p className="text-xs text-muted-foreground">No conversations yet</p>
-              </div>
-            ) : (
-              convos.map((c) => (
+      <div className="flex-1 flex border border-border rounded-xl overflow-hidden min-h-0">
+
+        {/* ── Conversation list ── */}
+        <div
+          className={`${activeCustomerId ? "hidden md:flex" : "flex"} w-full md:w-72 flex-col border-r border-border bg-card`}
+        >
+          <div className="px-4 py-3 border-b border-border">
+            <p className="text-sm font-semibold text-foreground">Conversations</p>
+          </div>
+
+          {loadingConvos ? (
+            <div className="flex-1 flex items-center justify-center">
+              <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : conversations.length === 0 ? (
+            <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
+              <MessageCircle className="w-10 h-10 mb-3 text-muted-foreground/30" />
+              <p className="text-sm text-muted-foreground">No conversations yet.</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Customers can message you after selecting a design.
+              </p>
+            </div>
+          ) : (
+            <div className="flex-1 overflow-y-auto">
+              {conversations.map((convo) => (
                 <button
-                  key={c.customer_user_id}
-                  onClick={() => setActiveCustomerId(c.customer_user_id)}
-                  className={`w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-muted/30 transition-colors border-b border-border/50 last:border-0 ${
-                    activeCustomerId === c.customer_user_id ? "bg-muted/40" : ""
+                  key={convo.customerId}
+                  onClick={() => openConversation(convo)}
+                  className={`w-full flex items-start gap-3 p-4 border-b border-border/50 text-left hover:bg-muted/30 transition-colors ${
+                    activeCustomerId === convo.customerId ? "bg-accent/10 border-l-2 border-l-accent" : ""
                   }`}
                 >
-                  <div className="w-8 h-8 rounded-full bg-accent/10 flex items-center justify-center shrink-0">
-                    <User className="w-3.5 h-3.5 text-accent" />
+                  <div className="w-9 h-9 rounded-full bg-secondary flex items-center justify-center shrink-0">
+                    <User className="w-4 h-4 text-muted-foreground" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium text-foreground text-sm truncate">{c.customer_name}</p>
-                    <p className="text-xs text-muted-foreground truncate">{c.last_message}</p>
+                    <div className="flex items-center justify-between gap-1">
+                      <p className="text-sm font-medium text-foreground truncate">{convo.customerName}</p>
+                      {convo.unreadCount > 0 && (
+                        <span className="bg-accent text-accent-foreground text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0">
+                          {convo.unreadCount}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground truncate mt-0.5">{convo.lastMessage}</p>
+                    <p className="text-[10px] text-muted-foreground/60 mt-0.5">
+                      {format(new Date(convo.lastMessageAt), "MMM d, HH:mm")}
+                    </p>
                   </div>
-                  {c.unread > 0 && (
-                    <span className="bg-accent text-accent-foreground text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center shrink-0">
-                      {c.unread}
-                    </span>
-                  )}
                 </button>
-              ))
-            )}
-          </div>
-        </Card>
+              ))}
+            </div>
+          )}
+        </div>
 
-        {/* Active chat */}
-        <Card className="border-border/60 overflow-hidden flex flex-col">
-          {!activeCustomerId ? (
-            <CardContent className="flex-1 flex items-center justify-center">
-              <div className="text-center">
-                <MessageCircle className="w-10 h-10 mx-auto mb-3 text-muted-foreground/20" />
-                <p className="text-muted-foreground text-sm">Select a conversation</p>
+        {/* ── Chat pane ── */}
+        {activeCustomerId ? (
+          <div className="flex-1 flex flex-col min-w-0">
+            {/* Chat header */}
+            <div className="px-4 py-3 border-b border-border bg-card flex items-center gap-3">
+              <button
+                onClick={() => setActiveCustomerId(null)}
+                className="md:hidden p-1 text-muted-foreground hover:text-foreground"
+              >
+                <ArrowLeft className="w-4 h-4" />
+              </button>
+              <div className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center shrink-0">
+                <User className="w-4 h-4 text-muted-foreground" />
               </div>
-            </CardContent>
-          ) : (
-            <>
-              {/* Chat header */}
-              <div className="px-4 py-3 border-b border-border flex items-center justify-between shrink-0">
-                <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-full bg-accent/10 flex items-center justify-center">
-                    <User className="w-3.5 h-3.5 text-accent" />
-                  </div>
-                  <p className="font-medium text-foreground text-sm">{activeConvo?.customer_name ?? "Customer"}</p>
+              <div>
+                <p className="text-sm font-semibold text-foreground">{activeCustomerName}</p>
+                <p className="text-xs text-muted-foreground">Customer</p>
+              </div>
+            </div>
+
+            {/* Messages */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {loadingMessages ? (
+                <div className="flex items-center justify-center h-full">
+                  <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
                 </div>
-              </div>
-
-              {/* Messages */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                {messages.map((msg) => {
-                  const isMe = msg.sender_type === "designer";
+              ) : messages.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full text-center">
+                  <MessageCircle className="w-10 h-10 mb-3 text-muted-foreground/30" />
+                  <p className="text-sm text-muted-foreground">No messages yet. Say hello!</p>
+                </div>
+              ) : (
+                messages.map((msg) => {
+                  const isDesigner = msg.sender_type === "designer";
                   return (
-                    <div key={msg.id} className={`flex ${isMe ? "justify-end" : "justify-start"}`}>
+                    <div key={msg.id} className={`flex ${isDesigner ? "justify-end" : "justify-start"}`}>
                       <div
-                        className={`max-w-[75%] px-3 py-2 rounded-2xl text-sm ${
-                          isMe
-                            ? "bg-foreground text-background rounded-br-sm"
+                        className={`max-w-[75%] rounded-2xl px-4 py-2.5 ${
+                          isDesigner
+                            ? "bg-accent text-accent-foreground rounded-br-sm"
                             : "bg-muted text-foreground rounded-bl-sm"
                         }`}
                       >
-                        <p className="leading-relaxed">{msg.message}</p>
-                        <p className={`text-[10px] mt-1 ${isMe ? "text-background/50 text-right" : "text-muted-foreground"}`}>
+                        <p className="text-sm leading-relaxed">{msg.message}</p>
+                        <p className={`text-[10px] mt-1 ${isDesigner ? "text-accent-foreground/70 text-right" : "text-muted-foreground"}`}>
                           {format(new Date(msg.created_at), "HH:mm")}
                         </p>
                       </div>
                     </div>
                   );
-                })}
-                <div ref={bottomRef} />
-              </div>
+                })
+              )}
+              <div ref={messagesEndRef} />
+            </div>
 
-              {/* Input */}
-              <div className="p-3 border-t border-border flex gap-2 shrink-0">
-                <Input
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
-                  placeholder="Type a message…"
-                  className="flex-1 h-9 text-sm"
-                  disabled={sending}
-                />
-                <Button size="icon" className="h-9 w-9 shrink-0" onClick={sendMessage} disabled={sending || !input.trim()}>
-                  {sending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                </Button>
-              </div>
-            </>
-          )}
-        </Card>
+            {/* Message input */}
+            <form onSubmit={handleSend} className="p-4 border-t border-border bg-card flex items-center gap-2">
+              <Input
+                value={newMessage}
+                onChange={(e) => setNewMessage(e.target.value)}
+                placeholder="Type a message…"
+                className="flex-1"
+                disabled={sending}
+              />
+              <Button type="submit" size="icon" disabled={sending || !newMessage.trim()}>
+                {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              </Button>
+            </form>
+          </div>
+        ) : (
+          <div className="hidden md:flex flex-1 items-center justify-center flex-col text-center p-8">
+            <MessageCircle className="w-14 h-14 mb-4 text-muted-foreground/20" />
+            <p className="text-muted-foreground">Select a conversation to start chatting.</p>
+          </div>
+        )}
       </div>
     </div>
   );
