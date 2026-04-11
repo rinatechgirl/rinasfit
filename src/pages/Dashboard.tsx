@@ -9,6 +9,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, PieChart, Pie, Cell } from 
 import { format, subMonths } from "date-fns";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import fallbackLogo from "@/assets/logo.jpeg";
 
 const CHART_COLORS = [
   "hsl(var(--accent))",
@@ -79,16 +80,33 @@ const Dashboard = () => {
     return acc;
   }, {} as Record<string, { label: string; color: string }>);
 
+  // Resolve organisation logo: use org logo if available, otherwise fallback
+  const orgLogoSrc = (tenant as any)?.logo_url ?? fallbackLogo;
+  const orgName = tenant?.business_name ?? "Dashboard";
+
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
-        <div>
-          <h1 className="text-2xl font-display font-bold text-foreground">
-            {tenant ? `Welcome, ${tenant.business_name}` : "Dashboard"}
-          </h1>
-          <p className="text-muted-foreground text-sm mt-0.5">
-            {tenant ? `Manage ${tenant.business_name}'s fashion business` : "Here's an overview of your fashion business"}
-          </p>
+        <div className="flex items-center gap-3">
+          {/* Organisation logo */}
+          <img
+            src={orgLogoSrc}
+            alt={orgName}
+            className="w-10 h-10 rounded-lg object-contain border border-border bg-background p-0.5 shadow-sm"
+            onError={(e) => {
+              (e.currentTarget as HTMLImageElement).src = fallbackLogo;
+            }}
+          />
+          <div>
+            <h1 className="text-2xl font-display font-bold text-foreground">
+              {tenant ? `Welcome, ${orgName}` : "Dashboard"}
+            </h1>
+            <p className="text-muted-foreground text-sm mt-0.5">
+              {tenant
+                ? `Manage ${orgName}'s fashion business`
+                : "Here's an overview of your fashion business"}
+            </p>
+          </div>
         </div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <TrendingUp className="w-3.5 h-3.5 text-accent" />
@@ -170,7 +188,7 @@ const Dashboard = () => {
       {/* Quick Overview table */}
       <Card className="shadow-sm border-border/60">
         <CardHeader>
-          <CardTitle className="font-display text-base">Quick Overview</CardTitle>
+          <CardTitle className="font-display text-base">Recent Measurements</CardTitle>
         </CardHeader>
         <CardContent>
           {recentMeasurements.length === 0 ? (
