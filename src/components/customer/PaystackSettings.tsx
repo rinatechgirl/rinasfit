@@ -20,16 +20,16 @@ const PaystackSettings = () => {
   useEffect(() => {
     const load = async () => {
       if (!tenantId) return;
-      const { data } = await supabase
-        .from("tenant_payment_config")
+      const { data } = await (supabase
+        .from("tenant_payment_config" as any)
         .select("id, paystack_public_key, paystack_secret_key")
         .eq("tenant_id", tenantId)
-        .maybeSingle();
+        .maybeSingle() as any);
 
       if (data) {
-        setConfigId(data.id);
-        setPublicKey(data.paystack_public_key ?? "");
-        setSecretKey(data.paystack_secret_key ?? "");
+        setConfigId((data as any).id);
+        setPublicKey((data as any).paystack_public_key ?? "");
+        setSecretKey((data as any).paystack_secret_key ?? "");
       }
       setLoading(false);
     };
@@ -50,15 +50,15 @@ const PaystackSettings = () => {
 
     let error;
     if (configId) {
-      ({ error } = await supabase.from("tenant_payment_config").update(payload).eq("id", configId));
+      ({ error } = await (supabase.from("tenant_payment_config" as any).update(payload as any).eq("id", configId) as any));
     } else {
-      const { data, error: insertError } = await supabase
-        .from("tenant_payment_config")
-        .insert(payload)
+      const { data, error: insertError } = await (supabase
+        .from("tenant_payment_config" as any)
+        .insert(payload as any)
         .select("id")
-        .single();
+        .single() as any);
       error = insertError;
-      if (data) setConfigId(data.id);
+      if (data) setConfigId((data as any).id);
     }
 
     if (error) toast.error(error.message);

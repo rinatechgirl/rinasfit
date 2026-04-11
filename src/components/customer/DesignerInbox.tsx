@@ -4,10 +4,8 @@ import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Send, Loader2, MessageCircle, User } from "lucide-react";
 import { format } from "date-fns";
-import { sendEmail } from "@/integrations/resend/client";
 
 interface Message {
   id: string;
@@ -23,11 +21,10 @@ interface Conversation {
   customer_name: string;
   last_message: string;
   unread: number;
-  order_id?: string;
 }
 
 const DesignerInbox = () => {
-  const { user, tenantId } = useAuth();
+  const { user, tenantId, tenant } = useAuth();
   const [convos, setConvos] = useState<Conversation[]>([]);
   const [activeCustomerId, setActiveCustomerId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -39,20 +36,30 @@ const DesignerInbox = () => {
   const fetchConversations = async () => {
     if (!tenantId) return;
 
-    const { data } = await supabase
-      .from("chat_messages")
-      .select("customer_user_id, message, created_at, is_read, sender_type, customer_accounts(full_name)")
+    const { data } = await (supabase
+      .from("chat_messages" as any)
+      .select("customer_user_id, message, created_at, is_read, sender_type")
       .eq("tenant_id", tenantId)
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false }) as any);
 
     if (!data) { setLoading(false); return; }
 
+    // Get unique customer IDs and fetch their names
+    const customerIds = [...new Set((data as any[]).map((m: any) => m.customer_user_id))];
+    const { data: accounts } = await (supabase
+      .from("customer_accounts" as any)
+      .select("user_id, full_name")
+      .in("user_id", customerIds) as any);
+
+    const nameMap = new Map<string, string>();
+    (accounts ?? []).forEach((a: any) => nameMap.set(a.user_id, a.full_name));
+
     const map = new Map<string, Conversation>();
-    data.forEach((msg: any) => {
+    (data as any[]).forEach((msg: any) => {
       if (!map.has(msg.customer_user_id)) {
         map.set(msg.customer_user_id, {
           customer_user_id: msg.customer_user_id,
-          customer_name: msg.customer_accounts?.full_name ?? "Customer",
+          customer_name: nameMap.get(msg.customer_user_id) ?? "Customer",
           last_message: msg.message,
           unread: !msg.is_read && msg.sender_type === "customer" ? 1 : 0,
         });
@@ -68,25 +75,24 @@ const DesignerInbox = () => {
   const fetchMessages = async (customerId: string) => {
     if (!tenantId) return;
 
-    const { data } = await supabase
-      .from("chat_messages")
+    const { data } = await (supabase
+      .from("chat_messages" as any)
       .select("id, sender_type, sender_id, message, created_at, is_read")
       .eq("tenant_id", tenantId)
       .eq("customer_user_id", customerId)
-      .order("created_at", { ascending: true });
+      .order("created_at", { ascending: true }) as any);
 
     setMessages((data as Message[]) ?? []);
 
     // Mark customer messages as read
-    await supabase
-      .from("chat_messages")
-      .update({ is_read: true })
+    await (supabase
+      .from("chat_messages" as any)
+      .update({ is_read: true } as any)
       .eq("tenant_id", tenantId)
       .eq("customer_user_id", customerId)
       .eq("sender_type", "customer")
-      .eq("is_read", false);
+      .eq("is_read", false) as any);
 
-    // Update unread count in sidebar
     setConvos((prev) =>
       prev.map((c) => c.customer_user_id === customerId ? { ...c, unread: 0 } : c)
     );
@@ -124,64 +130,16 @@ const DesignerInbox = () => {
     setSending(true);
     setInput("");
 
-    await supabase.from("chat_messages").insert({
+    await (supabase.from("chat_messages" as any).insert({
       tenant_id: tenantId,
       customer_user_id: activeCustomerId,
       sender_type: "designer",
       sender_id: user.id,
       message: text,
-    });
+    } as any) as any);
 
     fetchMessages(activeCustomerId);
     setSending(false);
-  };
-
-  const sendBookingCode = async (customerId: string, orderId: string) => {
-    if (!tenantId) return;
-
-    // Generate booking code
-    const { data: code } = await supabase.rpc("generate_booking_code", { p_tenant_id: tenantId });
-
-    // Update order
-    await supabase.from("orders").update({ booking_code: code, status: "confirmed" }).eq("id", orderId);
-
-    // Get customer email
-    const { data: acct } = await supabase
-      .from("customer_accounts")
-      .select("email, full_name")
-      .eq("user_id", customerId)
-      .maybeSingle();
-
-    const { data: tenant } = await supabase
-      .from("tenants")
-      .select("business_name")
-      .eq("id", tenantId)
-      .maybeSingle();
-
-    // Send email
-    if (acct?.email) {
-      await sendEmail({
-        to: acct.email,
-        template: "booking_code",
-        data: {
-          customer_name: acct.full_name,
-          booking_code: code,
-          business_name: tenant?.business_name ?? "the designer",
-        },
-      });
-    }
-
-    // Send in-chat notification
-    await supabase.from("chat_messages").insert({
-      tenant_id: tenantId,
-      customer_user_id: customerId,
-      sender_type: "designer",
-      sender_id: user!.id,
-      message: `✅ Your booking code is: ${code}. Please confirm your order and proceed to payment.`,
-      order_id: orderId,
-    });
-
-    fetchMessages(customerId);
   };
 
   const activeConvo = convos.find((c) => c.customer_user_id === activeCustomerId);
@@ -255,11 +213,6 @@ const DesignerInbox = () => {
                   </div>
                   <p className="font-medium text-foreground text-sm">{activeConvo?.customer_name ?? "Customer"}</p>
                 </div>
-                <SendBookingCodeButton
-                  customerId={activeCustomerId}
-                  tenantId={tenantId ?? ""}
-                  onSend={sendBookingCode}
-                />
               </div>
 
               {/* Messages */}
@@ -307,47 +260,5 @@ const DesignerInbox = () => {
     </div>
   );
 };
-
-// Helper: button to send booking code from an active order
-function SendBookingCodeButton({
-  customerId,
-  tenantId,
-  onSend,
-}: {
-  customerId: string;
-  tenantId: string;
-  onSend: (customerId: string, orderId: string) => Promise<void>;
-}) {
-  const [orders, setOrders] = useState<{ id: string; booking_code: string | null }[]>([]);
-  const [sending, setSending] = useState(false);
-
-  useEffect(() => {
-    supabase
-      .from("orders")
-      .select("id, booking_code")
-      .eq("tenant_id", tenantId)
-      .eq("customer_user_id", customerId)
-      .eq("status", "pending")
-      .then(({ data }) => setOrders(data ?? []));
-  }, [customerId, tenantId]);
-
-  if (orders.length === 0) return null;
-
-  const handleSend = async () => {
-    const order = orders[0];
-    if (order.booking_code) return; // already sent
-    setSending(true);
-    await onSend(customerId, order.id);
-    setSending(false);
-    setOrders([]);
-  };
-
-  return (
-    <Button size="sm" variant="outline" onClick={handleSend} disabled={sending} className="text-xs gap-1.5">
-      {sending && <Loader2 className="w-3 h-3 animate-spin" />}
-      Send Booking Code
-    </Button>
-  );
-}
 
 export default DesignerInbox;
