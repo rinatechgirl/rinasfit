@@ -14,6 +14,45 @@ export type Database = {
   }
   public: {
     Tables: {
+      cart_items: {
+        Row: {
+          added_at: string
+          customer_user_id: string
+          design_id: string
+          id: string
+          tenant_id: string
+        }
+        Insert: {
+          added_at?: string
+          customer_user_id: string
+          design_id: string
+          id?: string
+          tenant_id: string
+        }
+        Update: {
+          added_at?: string
+          customer_user_id?: string
+          design_id?: string
+          id?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cart_items_design_id_fkey"
+            columns: ["design_id"]
+            isOneToOne: false
+            referencedRelation: "designs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cart_items_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       categories: {
         Row: {
           created_at: string
@@ -45,6 +84,90 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      chat_messages: {
+        Row: {
+          created_at: string
+          customer_user_id: string
+          id: string
+          is_read: boolean
+          message: string
+          order_id: string | null
+          sender_id: string
+          sender_type: string
+          tenant_id: string
+        }
+        Insert: {
+          created_at?: string
+          customer_user_id: string
+          id?: string
+          is_read?: boolean
+          message: string
+          order_id?: string | null
+          sender_id: string
+          sender_type: string
+          tenant_id: string
+        }
+        Update: {
+          created_at?: string
+          customer_user_id?: string
+          id?: string
+          is_read?: boolean
+          message?: string
+          order_id?: string | null
+          sender_id?: string
+          sender_type?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chat_messages_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chat_messages_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      customer_accounts: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          email: string
+          full_name: string
+          id: string
+          phone: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          email: string
+          full_name: string
+          id?: string
+          phone?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          email?: string
+          full_name?: string
+          id?: string
+          phone?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       customers: {
         Row: {
@@ -338,39 +461,104 @@ export type Database = {
           },
         ]
       }
+      order_status_history: {
+        Row: {
+          changed_by: string | null
+          created_at: string
+          id: string
+          note: string | null
+          order_id: string
+          status: string
+        }
+        Insert: {
+          changed_by?: string | null
+          created_at?: string
+          id?: string
+          note?: string | null
+          order_id: string
+          status: string
+        }
+        Update: {
+          changed_by?: string | null
+          created_at?: string
+          id?: string
+          note?: string | null
+          order_id?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_status_history_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       orders: {
         Row: {
+          agreed_price: number | null
+          booking_code: string | null
+          confirmed_at: string | null
           created_at: string
           created_by: string
+          currency: string
           customer_id: string
+          customer_user_id: string | null
+          delivered_at: string | null
           design_id: string | null
           id: string
           measurement_id: string | null
           notes: string | null
+          payment_reference: string | null
+          payment_status: string
+          production_started_at: string | null
+          ready_at: string | null
           status: Database["public"]["Enums"]["order_status"]
           tenant_id: string | null
           updated_at: string
         }
         Insert: {
+          agreed_price?: number | null
+          booking_code?: string | null
+          confirmed_at?: string | null
           created_at?: string
           created_by: string
+          currency?: string
           customer_id: string
+          customer_user_id?: string | null
+          delivered_at?: string | null
           design_id?: string | null
           id?: string
           measurement_id?: string | null
           notes?: string | null
+          payment_reference?: string | null
+          payment_status?: string
+          production_started_at?: string | null
+          ready_at?: string | null
           status?: Database["public"]["Enums"]["order_status"]
           tenant_id?: string | null
           updated_at?: string
         }
         Update: {
+          agreed_price?: number | null
+          booking_code?: string | null
+          confirmed_at?: string | null
           created_at?: string
           created_by?: string
+          currency?: string
           customer_id?: string
+          customer_user_id?: string | null
+          delivered_at?: string | null
           design_id?: string | null
           id?: string
           measurement_id?: string | null
           notes?: string | null
+          payment_reference?: string | null
+          payment_status?: string
+          production_started_at?: string | null
+          ready_at?: string | null
           status?: Database["public"]["Enums"]["order_status"]
           tenant_id?: string | null
           updated_at?: string
@@ -436,6 +624,41 @@ export type Database = {
             foreignKeyName: "profiles_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tenant_payment_config: {
+        Row: {
+          created_at: string
+          id: string
+          paystack_public_key: string | null
+          paystack_secret_key: string | null
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          paystack_public_key?: string | null
+          paystack_secret_key?: string | null
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          paystack_public_key?: string | null
+          paystack_secret_key?: string | null
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tenant_payment_config_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: true
             referencedRelation: "tenants"
             referencedColumns: ["id"]
           },
@@ -524,6 +747,7 @@ export type Database = {
     }
     Functions: {
       accept_pending_invitation: { Args: never; Returns: undefined }
+      generate_booking_code: { Args: { p_tenant_id: string }; Returns: string }
       get_user_tenant_id: { Args: never; Returns: string }
       has_role: {
         Args: {
@@ -542,6 +766,8 @@ export type Database = {
         | "in_progress"
         | "ready"
         | "delivered"
+        | "confirmed"
+        | "cancelled"
       tenant_status: "pending" | "approved" | "suspended" | "rejected"
     }
     CompositeTypes: {
@@ -677,6 +903,8 @@ export const Constants = {
         "in_progress",
         "ready",
         "delivered",
+        "confirmed",
+        "cancelled",
       ],
       tenant_status: ["pending", "approved", "suspended", "rejected"],
     },
