@@ -58,20 +58,35 @@ const OrdersManagement = () => {
     if (!tenantId) return;
     setLoading(true);
 
-    const { data, error } = await supabase
+    const { data: rawOrders, error } = await supabase
       .from("orders")
       .select(`
         id, booking_code, status, agreed_price, currency,
         payment_status, created_at, customer_user_id,
-        designs(title, image_url),
-        customer_accounts(full_name, email)
+        designs(title, image_url)
       `)
       .eq("tenant_id", tenantId)
       .not("customer_user_id", "is", null)
       .order("created_at", { ascending: false });
 
-    if (error) toast.error(error.message);
-    setOrders((data as Order[]) ?? []);
+    if (error) { toast.error(error.message); setLoading(false); return; }
+
+    // Fetch customer account info separately since there's no FK relation
+    const customerIds = [...new Set((rawOrders ?? []).map((o: any) => o.customer_user_id).filter(Boolean))];
+    let accountMap = new Map<string, { full_name: string; email: string }>();
+    if (customerIds.length > 0) {
+      const { data: accounts } = await (supabase
+        .from("customer_accounts" as any)
+        .select("user_id, full_name, email")
+        .in("user_id", customerIds) as any);
+      (accounts ?? []).forEach((a: any) => accountMap.set(a.user_id, { full_name: a.full_name, email: a.email }));
+    }
+
+    const mapped = (rawOrders ?? []).map((o: any) => ({
+      ...o,
+      customer_accounts: accountMap.get(o.customer_user_id) ?? null,
+    }));
+    setOrders(mapped as Order[]);
     setLoading(false);
   };
 
@@ -87,7 +102,7 @@ const OrdersManagement = () => {
 
     const { error } = await supabase
       .from("orders")
-      .update({ status: newStatus, ...timestamps })
+      .update({ status: newStatus as any, ...timestamps } as any)
       .eq("id", order.id);
 
     if (error) {

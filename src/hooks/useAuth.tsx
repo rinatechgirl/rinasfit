@@ -97,7 +97,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }, 8000);
 
       try {
-        await supabase.rpc("accept_pending_invitation").catch(() => null);
+        try { await supabase.rpc("accept_pending_invitation"); } catch { /* ignore */ }
 
         const { data: isPlatAdmin } = await supabase.rpc("is_platform_admin");
         const platformAdmin = isPlatAdmin === true;
