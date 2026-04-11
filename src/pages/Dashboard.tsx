@@ -86,7 +86,9 @@ const Dashboard = () => {
           <h1 className="text-2xl font-display font-bold text-foreground">
             {tenant ? `Welcome, ${tenant.business_name}` : "Dashboard"}
           </h1>
-          <p className="text-muted-foreground text-sm mt-0.5">Here's an overview of your fashion business</p>
+          <p className="text-muted-foreground text-sm mt-0.5">
+            {tenant ? `Manage ${tenant.business_name}'s fashion business` : "Here's an overview of your fashion business"}
+          </p>
         </div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <TrendingUp className="w-3.5 h-3.5 text-accent" />
