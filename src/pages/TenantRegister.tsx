@@ -241,18 +241,33 @@ const TenantRegister = () => {
       const tenantId = tenant.id;
 
       // ── Step 5: Link user profile to tenant ───────────────────────────────
-      const { error: profileError } = await supabase
+      // The handle_new_user trigger already created the profile row on sign-up,
+      // so we UPDATE (not upsert).  A bare upsert without onConflict:'user_id'
+      // tries to INSERT, hits the unique constraint, and silently fails — leaving
+      // profiles.tenant_id = null and causing every subsequent sign-in on the
+      // main domain to redirect to /register-business instead of /dashboard.
+      const { error: profileUpdateError } = await supabase
         .from("profiles")
-        .upsert({
-          user_id: userId,
+        .update({
           tenant_id: tenantId,
           email: (email || user?.email) ?? "",
           full_name: ownerName,
-        });
+        })
+        .eq("user_id", userId);
 
-      if (profileError) {
-        // Profile may already exist from a trigger — warn but continue
-        console.warn("Profile upsert:", profileError.message);
+      if (profileUpdateError) {
+        // If the profile row somehow doesn't exist yet, fall back to insert.
+        const { error: profileInsertError } = await supabase
+          .from("profiles")
+          .insert({
+            user_id: userId,
+            tenant_id: tenantId,
+            email: (email || user?.email) ?? "",
+            full_name: ownerName,
+          });
+        if (profileInsertError) {
+          console.warn("Profile insert fallback failed:", profileInsertError.message);
+        }
       }
 
       // ── Step 6: Assign admin role ─────────────────────────────────────────

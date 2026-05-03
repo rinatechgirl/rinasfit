@@ -211,7 +211,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           .eq("user_id", userId)
           .maybeSingle();
 
-        const tid = profile?.tenant_id ?? null;
+        // Prefer profile.tenant_id; fall back to user_roles.tenant_id.
+        // profiles.tenant_id can be null when the upsert during registration
+        // failed silently (e.g. the trigger already created the row and the
+        // upsert had no onConflict clause).  user_roles.tenant_id is always
+        // written correctly during registration, so this fallback recovers it.
+        const tid = profile?.tenant_id ?? roleData?.tenant_id ?? null;
 
         if (!tid && subdomainSlug) {
           const { data: subdomainTenant } = await supabase

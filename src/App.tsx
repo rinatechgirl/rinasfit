@@ -110,15 +110,18 @@ const PlatformAdminRoute = ({ children }: { children: React.ReactNode }) => {
 
 /**
  * /auth gate — signed-in users are routed to their correct destination.
- * Platform admin → /admin/panel
- * Org/staff with tenant → /dashboard
- * Org/staff without tenant → /register-business (they need to register first)
+ * Platform admin     → /admin/panel
+ * Org/staff w/ tenant → /dashboard
+ * Customer user       → /customer/dashboard  (they have no tenant)
+ * Org/staff w/o tenant → /register-business  (new user, hasn't created a business)
  */
 const AuthGate = () => {
   const { user, loading, isPlatformAdmin, tenantId } = useAuth();
   if (loading) return <LoadingScreen />;
   if (user && isPlatformAdmin) return <Navigate to="/admin/panel" replace />;
   if (user && tenantId) return <Navigate to="/dashboard" replace />;
+  // Customer portal users must not be sent to the business-registration flow.
+  if (user?.user_metadata?.role === "customer") return <Navigate to="/customer/dashboard" replace />;
   if (user) return <Navigate to="/register-business" replace />;
   return <Auth />;
 };
