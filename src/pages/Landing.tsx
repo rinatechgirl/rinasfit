@@ -156,6 +156,7 @@ export default function Landing() {
   const stepsRef     = useInView(0.1);
   const magRef       = useInView(0.1);
   const ctaRef       = useInView(0.2);
+  const founderRef   = useInView(0.15);
 
   // Hero entrance — small delay so CSS is ready before classes apply
   const [heroLoaded, setHeroLoaded] = useState(false);
@@ -631,10 +632,7 @@ export default function Landing() {
       </section>
 
       {/* ── About the Founder ──────────────────────────────────────────────── */}
-      {(() => {
-        const founderRef = useInView(0.15);
-        return (
-          <section id="about" ref={founderRef.ref} className="border-t border-border scroll-mt-20">
+      <section id="about" ref={founderRef.ref} className="border-t border-border scroll-mt-20">
             <div className="max-w-7xl mx-auto px-6 lg:px-10 py-28 grid lg:grid-cols-[340px_1fr] gap-16 items-start">
 
               {/* Left — photo + name */}
@@ -685,9 +683,7 @@ export default function Landing() {
                 </div>
               </div>
             </div>
-          </section>
-        );
-      })()}
+      </section>
 
       {/* ── CTA ─────────────────────────────────────────────────────────────── */}
       <section ref={ctaRef.ref} className="relative border-t border-border overflow-hidden">

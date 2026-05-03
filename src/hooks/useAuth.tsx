@@ -211,7 +211,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           .eq("user_id", userId)
           .maybeSingle();
 
-        let tid = profile?.tenant_id ?? null;
+        const tid = profile?.tenant_id ?? null;
 
         if (!tid && subdomainSlug) {
           const { data: subdomainTenant } = await supabase

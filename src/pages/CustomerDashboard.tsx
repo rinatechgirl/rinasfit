@@ -574,15 +574,20 @@ function PaystackButton({ order, onSuccess }: { order: Order; onSuccess: () => v
       ref:      `RF-${order.booking_code ?? order.id}-${Date.now()}`,
       metadata: { order_id: order.id, booking_code: order.booking_code },
       callback: async (response: { reference: string }) => {
-        await supabase
-          .from("orders")
-          .update({
-            payment_status:   "paid",
-            payment_reference: response.reference,
-            status:           "in_progress",
-            confirmed_at:     new Date().toISOString(),
-          })
-          .eq("id", order.id);
+        // Verify the payment server-side before marking the order paid.
+        const { data: { session } } = await supabase.auth.getSession();
+        const { error: fnError } = await supabase.functions.invoke("verify-payment", {
+          body: { reference: response.reference, order_id: order.id },
+          headers: session?.access_token
+            ? { Authorization: `Bearer ${session.access_token}` }
+            : undefined,
+        });
+
+        if (fnError) {
+          toast.error("Payment could not be verified. Please contact support with your reference: " + response.reference);
+          setLoading(false);
+          return;
+        }
 
         toast.success("Payment successful! Your outfit is now being made.");
         onSuccess();

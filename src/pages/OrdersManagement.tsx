@@ -76,7 +76,7 @@ const OrdersManagement = () => {
 
     // Fetch customer account info separately since there's no FK relation
     const customerIds = [...new Set((rawOrders ?? []).map((o: any) => o.customer_user_id).filter(Boolean))];
-    let accountMap = new Map<string, { full_name: string; email: string }>();
+    const accountMap = new Map<string, { full_name: string; email: string }>();
     if (customerIds.length > 0) {
       const { data: accounts } = await (supabase
         .from("customer_accounts" as any)
