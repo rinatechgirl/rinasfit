@@ -157,12 +157,20 @@ const CustomerDashboard = () => {
           </div>
 
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-full bg-accent/20 flex items-center justify-center">
-                <User className="w-3.5 h-3.5 text-accent" />
+            <button
+              onClick={() => setProfileOpen(true)}
+              className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+              aria-label="Edit profile"
+            >
+              <div className="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center overflow-hidden border border-border">
+                {account?.avatar_url ? (
+                  <img src={account.avatar_url} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  <User className="w-4 h-4 text-accent" />
+                )}
               </div>
               <span className="text-sm text-foreground hidden sm:block">{account?.full_name}</span>
-            </div>
+            </button>
             <Button
               variant="ghost"
               size="sm"
