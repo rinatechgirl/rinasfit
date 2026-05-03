@@ -41,13 +41,16 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/catalogue",    icon: BookOpen,        label: "Our Catalogue" },
 ];
 
+const WORK_ITEMS: NavItem[] = [
+  { to: "/inbox",        icon: MessageCircle,   label: "Customer Inbox" },
+  { to: "/orders",       icon: Package,         label: "Customer Orders" },
+];
+
 const DISCOVER_ITEMS: NavItem[] = [
   { to: "/magazine",     icon: Globe,           label: "Fashion Magazine" },
 ];
 
 const ADMIN_ITEMS: NavItem[] = [
-  { to: "/inbox",        icon: MessageCircle,   label: "Customer Inbox", adminOnly: false },
-  { to: "/orders",       icon: Package,         label: "Orders",         adminOnly: false },
   { to: "/reports",      icon: BarChart3,       label: "Reports",        adminOnly: true },
   { to: "/staff",        icon: UserCog,         label: "Staff",          adminOnly: true },
   { to: "/settings",     icon: Settings,        label: "Settings",       adminOnly: true },
@@ -112,6 +115,13 @@ const AppLayout = () => {
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
         {NAV_ITEMS.map((item) => <NavLink key={item.to} item={item} />)}
+
+        <div className="pt-4 pb-1">
+          <p className="px-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60 mb-1">
+            Work
+          </p>
+        </div>
+        {WORK_ITEMS.map((item) => <NavLink key={item.to} item={item} />)}
 
         <div className="pt-4 pb-1">
           <p className="px-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60 mb-1">
