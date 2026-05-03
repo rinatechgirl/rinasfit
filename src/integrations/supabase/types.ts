@@ -93,7 +93,7 @@ export type Database = {
           is_read: boolean
           message: string
           order_id: string | null
-          sender_id: string
+          sender_id: string | null
           sender_type: string
           tenant_id: string
         }
@@ -104,7 +104,7 @@ export type Database = {
           is_read?: boolean
           message: string
           order_id?: string | null
-          sender_id: string
+          sender_id?: string | null
           sender_type: string
           tenant_id: string
         }
@@ -115,7 +115,7 @@ export type Database = {
           is_read?: boolean
           message?: string
           order_id?: string | null
-          sender_id?: string
+          sender_id?: string | null
           sender_type?: string
           tenant_id?: string
         }
@@ -504,7 +504,7 @@ export type Database = {
           created_at: string
           created_by: string
           currency: string
-          customer_id: string
+          customer_id: string | null
           customer_user_id: string | null
           delivered_at: string | null
           design_id: string | null
@@ -526,7 +526,7 @@ export type Database = {
           created_at?: string
           created_by: string
           currency?: string
-          customer_id: string
+          customer_id?: string | null
           customer_user_id?: string | null
           delivered_at?: string | null
           design_id?: string | null
@@ -548,7 +548,7 @@ export type Database = {
           created_at?: string
           created_by?: string
           currency?: string
-          customer_id?: string
+          customer_id?: string | null
           customer_user_id?: string | null
           delivered_at?: string | null
           design_id?: string | null
