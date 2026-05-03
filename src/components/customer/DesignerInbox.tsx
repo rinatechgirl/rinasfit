@@ -1,13 +1,11 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent } from "@/components/ui/card";
 import { Loader2, MessageCircle, Send, User, ArrowLeft } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
-import fallbackLogo from "@/assets/logo.jpeg";
 
 interface Conversation {
   customerId: string;
@@ -39,9 +37,8 @@ const DesignerInbox = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // ── Load conversation list ─────────────────────────────────────────────────
-  const loadConversations = async () => {
+  const loadConversations = useCallback(async () => {
     if (!tenantId) return;
-    setLoadingConvos(true);
 
     const { data, error } = await supabase
       .from("chat_messages")
@@ -60,7 +57,7 @@ const DesignerInbox = () => {
       if (!map.has(msg.customer_user_id)) {
         map.set(msg.customer_user_id, {
           customerId: msg.customer_user_id,
-          customerName: msg.customer_user_id, // placeholder, resolved below
+          customerName: msg.customer_user_id,
           lastMessage: msg.message,
           lastMessageAt: msg.created_at,
           unreadCount: (!msg.is_read && msg.sender_type === "customer") ? 1 : 0,
@@ -86,12 +83,12 @@ const DesignerInbox = () => {
 
     setConversations(Array.from(map.values()));
     setLoadingConvos(false);
-  };
+  }, [tenantId]);
 
-  useEffect(() => { loadConversations(); }, [tenantId]);
+  useEffect(() => { loadConversations(); }, [loadConversations]);
 
   // ── Load messages for selected conversation ────────────────────────────────
-  const loadMessages = async (customerId: string) => {
+  const loadMessages = useCallback(async (customerId: string) => {
     if (!tenantId) return;
     setLoadingMessages(true);
 
@@ -106,7 +103,7 @@ const DesignerInbox = () => {
     else setMessages((data as Message[]) ?? []);
 
     // Mark customer messages as read
-    await supabase
+    supabase
       .from("chat_messages")
       .update({ is_read: true } as any)
       .eq("tenant_id", tenantId)
@@ -114,12 +111,11 @@ const DesignerInbox = () => {
       .eq("sender_type", "customer");
 
     setLoadingMessages(false);
-  };
+  }, [tenantId]);
 
   useEffect(() => {
     if (activeCustomerId) loadMessages(activeCustomerId);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeCustomerId]);
+  }, [activeCustomerId, loadMessages]);
 
   // ── Realtime subscription ──────────────────────────────────────────────────
   useEffect(() => {
@@ -137,22 +133,28 @@ const DesignerInbox = () => {
         },
         (payload) => {
           const msg = payload.new as any;
+
+          // If this conversation is open, append the message (dedup by ID)
           if (activeCustomerId && msg.customer_user_id === activeCustomerId) {
-            setMessages((prev) => [...prev, msg as Message]);
+            setMessages((prev) => {
+              if (prev.some((m) => m.id === msg.id)) return prev;
+              return [...prev, msg as Message];
+            });
+            // Mark as read since the designer has it open
             supabase
               .from("chat_messages")
               .update({ is_read: true } as any)
               .eq("id", msg.id);
           }
-          // Always refresh conversations list for unread counts
+
+          // Bump conversation list (unread count, last message)
           loadConversations();
         }
       )
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tenantId, activeCustomerId]);
+  }, [tenantId, activeCustomerId, loadConversations]);
 
   // ── Auto-scroll to bottom ─────────────────────────────────────────────────
   useEffect(() => {
@@ -163,18 +165,32 @@ const DesignerInbox = () => {
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMessage.trim() || !activeCustomerId || !tenantId) return;
+
+    const text = newMessage.trim();
+    setNewMessage(""); // clear immediately
     setSending(true);
 
-    const { error } = await supabase.from("chat_messages").insert({
-      tenant_id: tenantId,
-      customer_user_id: activeCustomerId,
-      message: newMessage.trim(),
-      sender_type: "designer",
-      is_read: false,
-    } as any);
+    const { data: inserted, error } = await supabase
+      .from("chat_messages")
+      .insert({
+        tenant_id: tenantId,
+        customer_user_id: activeCustomerId,
+        message: text,
+        sender_type: "designer",
+        is_read: false,
+      } as any)
+      .select("id, message, sender_type, created_at, is_read")
+      .single();
 
-    if (error) toast.error(error.message);
-    else setNewMessage("");
+    if (error) {
+      toast.error(error.message);
+      setNewMessage(text); // restore on failure
+    } else if (inserted) {
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === (inserted as Message).id)) return prev;
+        return [...prev, inserted as Message];
+      });
+    }
 
     setSending(false);
   };
@@ -182,6 +198,7 @@ const DesignerInbox = () => {
   const openConversation = (convo: Conversation) => {
     setActiveCustomerId(convo.customerId);
     setActiveCustomerName(convo.customerName);
+    setMessages([]);
   };
 
   // ─── Layout ───────────────────────────────────────────────────────────────
@@ -191,7 +208,7 @@ const DesignerInbox = () => {
       <div className="mb-4">
         <h1 className="text-2xl font-display font-bold text-foreground">Customer Inbox</h1>
         <p className="text-muted-foreground text-sm mt-1">
-          Chat with customers who've placed orders or enquiries.
+          Chat with customers who&apos;ve placed orders or enquiries.
         </p>
       </div>
 
@@ -293,7 +310,7 @@ const DesignerInbox = () => {
                             : "bg-muted text-foreground rounded-bl-sm"
                         }`}
                       >
-                        <p className="text-sm leading-relaxed">{msg.message}</p>
+                        <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.message}</p>
                         <p className={`text-[10px] mt-1 ${isDesigner ? "text-accent-foreground/70 text-right" : "text-muted-foreground"}`}>
                           {format(new Date(msg.created_at), "HH:mm")}
                         </p>

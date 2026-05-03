@@ -19,6 +19,7 @@ import { format } from "date-fns";
 import fallbackLogo from "@/assets/logo.jpeg";
 import CustomerChat from "@/components/customer/CustomerChat";
 import CustomerProfileDialog from "@/components/customer/CustomerProfileDialog";
+import CustomerMeasurementOrderDialog from "@/components/customer/CustomerMeasurementOrderDialog";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -120,6 +121,7 @@ const CustomerDashboard = () => {
   const [orders, setOrders]               = useState<Order[]>([]);
   const [dataLoading, setDataLoading]     = useState(true);
   const [placingIds, setPlacingIds]       = useState<Set<string>>(new Set());
+  const [pendingOrderItem, setPendingOrderItem] = useState<CartItem | null>(null);
   const [activeChatTenant, setActiveChatTenant] = useState<{
     tenantId: string; name: string; orderId?: string;
   } | null>(null);
@@ -165,8 +167,8 @@ const CustomerDashboard = () => {
     else { toast.success("Removed from cart"); fetchData(); }
   };
 
-  // ── Place Order ─────────────────────────────────────────────────────────────
-  const placeOrder = async (item: CartItem) => {
+  // ── Place Order (called after measurement dialog confirms) ──────────────────
+  const placeOrder = async (item: CartItem, measurementId: string | null) => {
     if (!customer) return;
     setPlacingIds((prev) => new Set(prev).add(item.id));
 
@@ -180,6 +182,7 @@ const CustomerDashboard = () => {
           tenant_id:        item.tenant_id,
           created_by:       customer.id,
           status:           "pending",
+          ...(measurementId ? { measurement_id: measurementId } : {}),
         } as any)
         .select("id, booking_code")
         .single();
@@ -378,7 +381,7 @@ const CustomerDashboard = () => {
                         <Button
                           size="sm"
                           className="w-full h-8 text-xs cursor-pointer"
-                          onClick={() => placeOrder(item)}
+                          onClick={() => setPendingOrderItem(item)}
                           disabled={placing}
                         >
                           {placing ? (
@@ -532,6 +535,22 @@ const CustomerDashboard = () => {
       )}
 
       <CustomerProfileDialog open={profileOpen} onOpenChange={setProfileOpen} />
+
+      {/* Measurement dialog — shown before the order is placed */}
+      {pendingOrderItem && customer && (
+        <CustomerMeasurementOrderDialog
+          open={!!pendingOrderItem}
+          designTitle={pendingOrderItem.designs.title}
+          tenantId={pendingOrderItem.tenant_id}
+          customerId={customer.id}
+          onClose={() => setPendingOrderItem(null)}
+          onConfirm={(measurementId) => {
+            const item = pendingOrderItem;
+            setPendingOrderItem(null);
+            placeOrder(item, measurementId);
+          }}
+        />
+      )}
     </div>
   );
 };

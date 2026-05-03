@@ -42,7 +42,7 @@ const CustomerChat = ({ tenantId, tenantName, customerId, orderId, onClose }: Cu
     else setMessages((data as Message[]) ?? []);
 
     // Mark designer messages as read
-    await supabase
+    supabase
       .from("chat_messages")
       .update({ is_read: true } as any)
       .eq("tenant_id", tenantId)
@@ -54,7 +54,7 @@ const CustomerChat = ({ tenantId, tenantName, customerId, orderId, onClose }: Cu
 
   useEffect(() => { loadMessages(); }, []);
 
-  // ── Realtime ──────────────────────────────────────────────────────────────
+  // ── Realtime subscription ─────────────────────────────────────────────────
   useEffect(() => {
     const channel = supabase
       .channel(`customer-chat-${tenantId}-${customerId}`)
@@ -68,9 +68,12 @@ const CustomerChat = ({ tenantId, tenantName, customerId, orderId, onClose }: Cu
         },
         (payload) => {
           const msg = payload.new as any;
-          if (msg.customer_user_id === customerId) {
-            setMessages((prev) => [...prev, msg as Message]);
-          }
+          if (msg.customer_user_id !== customerId) return;
+          // Dedup: the sender already added the message optimistically via handleSend
+          setMessages((prev) => {
+            if (prev.some((m) => m.id === msg.id)) return prev;
+            return [...prev, msg as Message];
+          });
         }
       )
       .subscribe();
@@ -87,25 +90,41 @@ const CustomerChat = ({ tenantId, tenantName, customerId, orderId, onClose }: Cu
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMessage.trim()) return;
+
+    const text = newMessage.trim();
+    setNewMessage(""); // clear immediately for snappy UX
     setSending(true);
 
-    const { error } = await supabase.from("chat_messages").insert({
-      tenant_id: tenantId,
-      customer_user_id: customerId,
-      message: newMessage.trim(),
-      sender_type: "customer",
-      is_read: false,
-      order_id: orderId ?? null,
-    } as any);
+    const { data: inserted, error } = await supabase
+      .from("chat_messages")
+      .insert({
+        tenant_id: tenantId,
+        customer_user_id: customerId,
+        message: text,
+        sender_type: "customer",
+        is_read: false,
+        order_id: orderId ?? null,
+      } as any)
+      .select("id, message, sender_type, created_at, is_read")
+      .single();
 
-    if (error) toast.error(error.message);
-    else setNewMessage("");
+    if (error) {
+      toast.error(error.message);
+      setNewMessage(text); // restore text on failure
+    } else if (inserted) {
+      // Add immediately — realtime handler will dedup if it arrives too
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === (inserted as Message).id)) return prev;
+        return [...prev, inserted as Message];
+      });
+    }
 
     setSending(false);
   };
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 w-80 sm:w-96 flex flex-col rounded-2xl border border-border bg-card shadow-2xl overflow-hidden"
+    <div
+      className="fixed bottom-4 right-4 z-50 w-80 sm:w-96 flex flex-col rounded-2xl border border-border bg-card shadow-2xl overflow-hidden"
       style={{ maxHeight: "min(520px, calc(100vh - 2rem))" }}
     >
       {/* Header */}
@@ -146,7 +165,7 @@ const CustomerChat = ({ tenantId, tenantName, customerId, orderId, onClose }: Cu
                       : "bg-muted text-foreground rounded-bl-sm"
                   }`}
                 >
-                  <p className="text-sm leading-relaxed">{msg.message}</p>
+                  <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.message}</p>
                   <p className={`text-[10px] mt-0.5 ${isCustomer ? "text-background/60 text-right" : "text-muted-foreground"}`}>
                     {format(new Date(msg.created_at), "HH:mm")}
                   </p>
