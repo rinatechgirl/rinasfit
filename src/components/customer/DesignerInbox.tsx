@@ -123,10 +123,10 @@ const DesignerInbox = () => {
 
   // ── Realtime subscription ──────────────────────────────────────────────────
   useEffect(() => {
-    if (!tenantId || !activeCustomerId) return;
+    if (!tenantId) return;
 
     const channel = supabase
-      .channel(`designer-inbox-${tenantId}-${activeCustomerId}`)
+      .channel(`designer-inbox-${tenantId}`)
       .on(
         "postgres_changes",
         {
@@ -137,17 +137,15 @@ const DesignerInbox = () => {
         },
         (payload) => {
           const msg = payload.new as any;
-          if (msg.customer_user_id === activeCustomerId) {
+          if (activeCustomerId && msg.customer_user_id === activeCustomerId) {
             setMessages((prev) => [...prev, msg as Message]);
-            // Mark as read immediately since we're looking at it
             supabase
               .from("chat_messages")
               .update({ is_read: true } as any)
               .eq("id", msg.id);
-          } else {
-            // New message from a different customer — refresh conversation list
-            loadConversations();
           }
+          // Always refresh conversations list for unread counts
+          loadConversations();
         }
       )
       .subscribe();
