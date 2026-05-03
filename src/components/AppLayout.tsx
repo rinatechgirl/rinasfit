@@ -41,13 +41,16 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/catalogue",    icon: BookOpen,        label: "Our Catalogue" },
 ];
 
+const WORK_ITEMS: NavItem[] = [
+  { to: "/inbox",        icon: MessageCircle,   label: "Customer Inbox" },
+  { to: "/orders",       icon: Package,         label: "Customer Orders" },
+];
+
 const DISCOVER_ITEMS: NavItem[] = [
   { to: "/magazine",     icon: Globe,           label: "Fashion Magazine" },
 ];
 
 const ADMIN_ITEMS: NavItem[] = [
-  { to: "/inbox",        icon: MessageCircle,   label: "Customer Inbox", adminOnly: false },
-  { to: "/orders",       icon: Package,         label: "Orders",         adminOnly: false },
   { to: "/reports",      icon: BarChart3,       label: "Reports",        adminOnly: true },
   { to: "/staff",        icon: UserCog,         label: "Staff",          adminOnly: true },
   { to: "/settings",     icon: Settings,        label: "Settings",       adminOnly: true },
