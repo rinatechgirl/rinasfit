@@ -11,9 +11,38 @@ import { supabase } from "@/integrations/supabase/client";
 import { getTenantSlugFromHostname } from "@/hooks/useTenantSlug";
 import type { User, Session } from "@supabase/supabase-js";
 
-type AppRole = "admin" | "staff";
+// ─── Role types ───────────────────────────────────────────────────────────────
 
-interface TenantInfo {
+export type AppRole = "admin" | "staff";
+
+// Permission keys that can be toggled per staff member by org admin
+export type PermissionKey =
+  | "customers"
+  | "measurements"
+  | "designs"
+  | "categories"
+  | "orders"
+  | "inbox"
+  | "catalogue";
+
+// Feature keys that can be toggled per tenant by platform admin
+export type FeatureKey =
+  | "customers"
+  | "measurements"
+  | "designs"
+  | "categories"
+  | "orders"
+  | "inbox"
+  | "reports"
+  | "staff"
+  | "catalogue";
+
+export type StaffPermissions = Partial<Record<PermissionKey, boolean>>;
+export type TenantFeatures   = Partial<Record<FeatureKey, boolean>>;
+
+// ─── Tenant ───────────────────────────────────────────────────────────────────
+
+export interface TenantInfo {
   id: string;
   business_name: string;
   slug: string;
@@ -27,6 +56,8 @@ interface TenantInfo {
   description?: string | null;
 }
 
+// ─── Context type ─────────────────────────────────────────────────────────────
+
 interface AuthContextType {
   user: User | null;
   session: Session | null;
@@ -36,9 +67,28 @@ interface AuthContextType {
   isPlatformAdmin: boolean;
   tenantId: string | null;
   tenant: TenantInfo | null;
+  /** Null for admins / platform admins (all permissions granted). For staff,
+   *  an object where any key set to false is blocked. Missing keys = allowed. */
+  permissions: StaffPermissions | null;
+  /** Feature flags set by the platform admin per organisation.
+   *  Missing keys or true = feature is on. False = disabled for this org. */
+  tenantFeatures: TenantFeatures | null;
+  /**
+   * Returns true if the current user may access the given module.
+   * Always true for org-admins and platform-admins.
+   * For staff: checks their personal permission object.
+   */
+  hasPermission: (key: PermissionKey) => boolean;
+  /**
+   * Returns true if the platform admin has enabled the given feature
+   * for the current organisation. Always true for platform-admins.
+   */
+  isFeatureEnabled: (key: FeatureKey) => boolean;
   signOut: () => Promise<void>;
   refreshTenant: () => Promise<void>;
 }
+
+// ─── Context defaults ─────────────────────────────────────────────────────────
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
@@ -49,48 +99,68 @@ const AuthContext = createContext<AuthContextType>({
   isPlatformAdmin: false,
   tenantId: null,
   tenant: null,
+  permissions: null,
+  tenantFeatures: null,
+  hasPermission: () => true,
+  isFeatureEnabled: () => true,
   signOut: async () => {},
   refreshTenant: async () => {},
 });
 
-export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [role, setRole] = useState<AppRole | null>(null);
-  const [tenantId, setTenantId] = useState<string | null>(null);
-  const [tenant, setTenant] = useState<TenantInfo | null>(null);
-  const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
+// ─── Provider ─────────────────────────────────────────────────────────────────
 
-  const mountedRef = useRef(true);
-  const fetchingRef = useRef(false);
-  // Track the user ID we last fetched context for — prevents redundant fetches
-  const lastFetchedUserIdRef = useRef<string | null>(null);
+export const AuthProvider = ({ children }: { children: ReactNode }) => {
+  const [user, setUser]                       = useState<User | null>(null);
+  const [session, setSession]                 = useState<Session | null>(null);
+  const [loading, setLoading]                 = useState(true);
+  const [role, setRole]                       = useState<AppRole | null>(null);
+  const [tenantId, setTenantId]               = useState<string | null>(null);
+  const [tenant, setTenant]                   = useState<TenantInfo | null>(null);
+  const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
+  const [permissions, setPermissions]         = useState<StaffPermissions | null>(null);
+  const [tenantFeatures, setTenantFeatures]   = useState<TenantFeatures | null>(null);
+
+  const mountedRef              = useRef(true);
+  const fetchingRef             = useRef(false);
+  const lastFetchedUserIdRef    = useRef<string | null>(null);
 
   useEffect(() => {
     mountedRef.current = true;
     return () => { mountedRef.current = false; };
   }, []);
 
-  // ── fetchUserContext ────────────────────────────────────────────────────────
-  // Wrapped in useCallback so refreshTenant can call it safely.
-  // Key fixes vs original:
-  //   1. Uses a local `active` flag instead of global fetchingRef lock — prevents
-  //      the lock getting permanently stuck if a fetch errors out mid-way.
-  //   2. 8-second timeout — if Supabase hangs, loading resolves anyway.
-  //   3. Skips re-fetch if the same userId was already fetched and we have data
-  //      (tab-switch TOKEN_REFRESHED won't trigger a redundant full fetch).
+  // ── hasPermission ────────────────────────────────────────────────────────────
+  // Admins and platform admins always have all permissions.
+  // For staff: permission is granted unless explicitly set to false.
+  const hasPermission = useCallback(
+    (key: PermissionKey): boolean => {
+      if (isPlatformAdmin || role === "admin") return true;
+      if (!permissions) return true;
+      return permissions[key] !== false;
+    },
+    [isPlatformAdmin, role, permissions]
+  );
+
+  // ── isFeatureEnabled ─────────────────────────────────────────────────────────
+  // Platform admins can always see everything.
+  // Otherwise: feature is on unless explicitly set to false by platform admin.
+  const isFeatureEnabled = useCallback(
+    (key: FeatureKey): boolean => {
+      if (isPlatformAdmin) return true;
+      if (!tenantFeatures) return true;
+      return tenantFeatures[key] !== false;
+    },
+    [isPlatformAdmin, tenantFeatures]
+  );
+
+  // ── fetchUserContext ─────────────────────────────────────────────────────────
   const fetchUserContext = useCallback(
     async (userId: string, force = false) => {
-      // Skip if already fetching
       if (fetchingRef.current) return;
-
-      // Skip if we already have context for this user (unless forced)
       if (!force && lastFetchedUserIdRef.current === userId && tenant !== null) return;
 
       fetchingRef.current = true;
 
-      // Safety timeout — if anything hangs, unblock loading after 8s
       const timeout = setTimeout(() => {
         if (mountedRef.current) setLoading(false);
         fetchingRef.current = false;
@@ -105,27 +175,34 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         if (!mountedRef.current) return;
         setIsPlatformAdmin(platformAdmin);
 
-        const { data: roleData } = await supabase
-          .from("user_roles")
-          .select("role, tenant_id")
-          .eq("user_id", userId)
-          .limit(1)
-          .maybeSingle();
-
-        const userRole = platformAdmin
-          ? "admin"
-          : ((roleData?.role as AppRole) ?? "staff");
-
-        if (!mountedRef.current) return;
-        setRole(userRole);
-
+        // ── Platform admin: skip tenant resolution ───────────────────────────
         if (platformAdmin) {
+          setRole("admin");
           setTenantId(null);
           setTenant(null);
+          setPermissions(null);
+          setTenantFeatures(null);
           lastFetchedUserIdRef.current = userId;
           return;
         }
 
+        // ── Load role + permissions from user_roles ──────────────────────────
+        const { data: roleData } = await supabase
+          .from("user_roles")
+          .select("role, tenant_id, permissions")
+          .eq("user_id", userId)
+          .limit(1)
+          .maybeSingle();
+
+        const userRole: AppRole = (roleData?.role as AppRole) ?? "staff";
+        const userPermissions: StaffPermissions | null =
+          userRole === "staff" ? ((roleData as any)?.permissions ?? null) : null;
+
+        if (!mountedRef.current) return;
+        setRole(userRole);
+        setPermissions(userPermissions);
+
+        // ── Resolve tenant ID ────────────────────────────────────────────────
         const subdomainSlug = getTenantSlugFromHostname();
 
         const { data: profile } = await supabase
@@ -157,6 +234,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setTenantId(tid);
 
         if (tid) {
+          // ── Load tenant info ─────────────────────────────────────────────
           const { data: tenantData } = await supabase
             .from("tenants")
             .select(
@@ -168,13 +246,24 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           if (mountedRef.current) {
             setTenant(tenantData as TenantInfo | null);
           }
+
+          // ── Load tenant feature flags ────────────────────────────────────
+          const { data: featuresRow } = await supabase
+            .from("tenant_features")
+            .select("features")
+            .eq("tenant_id", tid)
+            .maybeSingle();
+
+          if (mountedRef.current) {
+            setTenantFeatures((featuresRow as any)?.features ?? null);
+          }
         } else {
           setTenant(null);
+          setTenantFeatures(null);
         }
 
         lastFetchedUserIdRef.current = userId;
       } catch (err) {
-        // Don't let errors leave the app stuck in loading
         console.error("useAuth fetchUserContext error:", err);
       } finally {
         clearTimeout(timeout);
@@ -187,24 +276,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   );
 
   const refreshTenant = useCallback(async () => {
-    if (user) {
-      // Force = true so it re-fetches even if userId matches
-      await fetchUserContext(user.id, true);
-    }
+    if (user) await fetchUserContext(user.id, true);
   }, [user, fetchUserContext]);
 
-  // ── Bootstrap + auth listener ───────────────────────────────────────────────
+  // ── Bootstrap + auth listener ────────────────────────────────────────────────
   useEffect(() => {
     let isMounted = true;
 
     const init = async () => {
       const { data: { session } } = await supabase.auth.getSession();
-
       if (!isMounted) return;
-
       setSession(session);
       setUser(session?.user ?? null);
-
       if (session?.user) {
         await fetchUserContext(session.user.id);
       } else {
@@ -218,18 +301,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       async (event, session) => {
         if (!mountedRef.current) return;
 
-        // ── TOKEN_REFRESHED ──────────────────────────────────────────────────
-        // Fires every time the user switches back to the tab.
-        // NEVER set loading=true here — it causes the blank screen.
-        // NEVER re-fetch user context here — the session is still valid.
-        // Just silently update the session object.
         if (event === "TOKEN_REFRESHED") {
           setSession(session);
           setUser(session?.user ?? null);
           return;
         }
 
-        // ── PASSWORD_RECOVERY ────────────────────────────────────────────────
         if (event === "PASSWORD_RECOVERY") {
           sessionStorage.setItem("rf-password-recovery", "true");
           setSession(session);
@@ -237,7 +314,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           return;
         }
 
-        // ── SIGNED_OUT ───────────────────────────────────────────────────────
         if (event === "SIGNED_OUT" || !session) {
           setSession(null);
           setUser(null);
@@ -245,27 +321,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           setTenantId(null);
           setTenant(null);
           setIsPlatformAdmin(false);
+          setPermissions(null);
+          setTenantFeatures(null);
           lastFetchedUserIdRef.current = null;
           setLoading(false);
           return;
         }
 
-        // ── SIGNED_IN / USER_UPDATED ─────────────────────────────────────────
-        // Only set loading=true for a genuine new sign-in where we don't
-        // yet have context for this user.
         setSession(session);
         setUser(session.user);
 
-        const isNewUser =
-          lastFetchedUserIdRef.current !== session.user.id;
-
+        const isNewUser = lastFetchedUserIdRef.current !== session.user.id;
         if (isNewUser) {
           setLoading(true);
           await fetchUserContext(session.user.id);
-        }
-        // If it's the same user (e.g. USER_UPDATED), just refetch silently
-        // without touching loading state
-        else if (event === "USER_UPDATED") {
+        } else if (event === "USER_UPDATED") {
           await fetchUserContext(session.user.id, true);
         }
       }
@@ -293,6 +363,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         isPlatformAdmin,
         tenantId,
         tenant,
+        permissions,
+        tenantFeatures,
+        hasPermission,
+        isFeatureEnabled,
         signOut,
         refreshTenant,
       }}

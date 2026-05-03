@@ -1,7 +1,7 @@
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { CustomerAuthProvider, useCustomerAuth } from "@/hooks/useCustomerAuth";
@@ -30,21 +30,31 @@ import CustomerAuth from "@/pages/CustomerAuth";
 import CustomerDashboard from "@/pages/CustomerDashboard";
 import OrdersManagement from "@/pages/OrdersManagement";
 import DesignerInbox from "@/components/customer/DesignerInbox";
-
 import { queryClient } from "@/queryClient";
 
-// ─── Shared loading screen ────────────────────────────────────────────────────
+// ─── Branded loading screen ───────────────────────────────────────────────────
 
 function LoadingScreen() {
   return (
-    <div className="flex items-center justify-center h-screen text-muted-foreground">
-      Loading…
+    <div className="flex flex-col items-center justify-center h-screen gap-4 bg-background">
+      <div className="relative">
+        <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
+          <span className="text-primary font-bold text-lg">R</span>
+        </div>
+        <span className="absolute -bottom-1 -right-1 w-3 h-3 rounded-full bg-primary animate-ping opacity-60" />
+        <span className="absolute -bottom-1 -right-1 w-3 h-3 rounded-full bg-primary" />
+      </div>
+      <p className="text-xs text-muted-foreground animate-pulse">Loading…</p>
     </div>
   );
 }
 
-// ─── Designer-side route guards ───────────────────────────────────────────────
+// ─── Designer route guards ────────────────────────────────────────────────────
 
+/**
+ * Requires a logged-in designer/staff user.
+ * adminOnly: further restricts to org-admin or platform-admin.
+ */
 const ProtectedRoute = ({
   children,
   adminOnly = false,
@@ -55,11 +65,14 @@ const ProtectedRoute = ({
   const { user, loading, isAdmin, isPlatformAdmin } = useAuth();
   if (loading) return <LoadingScreen />;
   if (!user) return <Navigate to="/auth" replace />;
-  if (adminOnly && !isAdmin && !isPlatformAdmin)
-    return <Navigate to="/dashboard" replace />;
+  if (adminOnly && !isAdmin && !isPlatformAdmin) return <Navigate to="/dashboard" replace />;
   return <>{children}</>;
 };
 
+/**
+ * Ensures the user belongs to an approved tenant.
+ * Platform admins bypass this — they have no tenant but full access.
+ */
 const TenantGuard = ({ children }: { children: React.ReactNode }) => {
   const { user, loading, tenantId, tenant, isPlatformAdmin } = useAuth();
   if (loading) return <LoadingScreen />;
@@ -72,6 +85,9 @@ const TenantGuard = ({ children }: { children: React.ReactNode }) => {
   return <>{children}</>;
 };
 
+/**
+ * Prevents already-registered users from hitting the business registration page.
+ */
 const RegisterGuard = ({ children }: { children: React.ReactNode }) => {
   const { user, loading, isPlatformAdmin, tenantId } = useAuth();
   if (loading) return <LoadingScreen />;
@@ -81,9 +97,8 @@ const RegisterGuard = ({ children }: { children: React.ReactNode }) => {
 };
 
 /**
- * Platform admin panel guard.
- * Only lets through verified platform admins.
- * Org admins, staff, and customers are all redirected away.
+ * Only platform admins may access the admin panel.
+ * All other roles are redirected to their respective dashboards.
  */
 const PlatformAdminRoute = ({ children }: { children: React.ReactNode }) => {
   const { user, loading, isPlatformAdmin } = useAuth();
@@ -94,23 +109,20 @@ const PlatformAdminRoute = ({ children }: { children: React.ReactNode }) => {
 };
 
 /**
- * Auth gate for the public /auth route.
- * Signed-in users are redirected based on role.
- * Platform admins → /admin/panel (NOT /dashboard).
+ * Auth page gate: signed-in users are redirected to their dashboard.
+ * Platform admins → /admin/panel
+ * Everyone else  → /dashboard
  */
 const AuthGate = () => {
   const { user, loading, isPlatformAdmin } = useAuth();
   if (loading) return <LoadingScreen />;
-  // Platform admins who somehow end up at /auth go back to their panel
   if (user && isPlatformAdmin) return <Navigate to="/admin/panel" replace />;
   if (user) return <Navigate to="/dashboard" replace />;
   return <Auth />;
 };
 
 /**
- * Landing page gate.
- * Platform admins → /admin/panel.
- * Signed-in designers → /dashboard.
+ * Landing page gate: signed-in users skip the marketing page.
  */
 const LandingGate = () => {
   const { user, loading, isPlatformAdmin } = useAuth();
@@ -120,7 +132,7 @@ const LandingGate = () => {
   return <Landing />;
 };
 
-// ─── Customer-side route guards ───────────────────────────────────────────────
+// ─── Customer route guards ────────────────────────────────────────────────────
 
 const CustomerAuthGate = ({ children }: { children: React.ReactNode }) => {
   const { customer, loading } = useCustomerAuth();
@@ -140,16 +152,17 @@ const App = () => (
         <AuthProvider>
           <CustomerAuthProvider>
             <Routes>
-              {/* ── Public ── */}
-              <Route path="/" element={<LandingGate />} />
-              <Route path="/auth" element={<AuthGate />} />
-              <Route path="/reset-password" element={<ResetPassword />} />
-              <Route path="/magazine" element={<Magazine />} />
-              <Route path="/catalogue" element={<Catalogue />} />
 
-              {/* ── Platform admin — dedicated login + panel ── */}
-              {/* /admin = login page (no link from public UI)   */}
-              {/* /admin/panel = the actual panel (guarded)      */}
+              {/* ── Public ── */}
+              <Route path="/"              element={<LandingGate />} />
+              <Route path="/auth"          element={<AuthGate />} />
+              <Route path="/reset-password" element={<ResetPassword />} />
+              <Route path="/magazine"      element={<Magazine />} />
+              <Route path="/catalogue"     element={<Catalogue />} />
+
+              {/* ── Platform admin ─────────────────────────────────────────── */}
+              {/* /admin = dedicated login (no link from public UI)             */}
+              {/* /admin/panel = platform control (guarded)                     */}
               <Route path="/admin" element={<AdminLogin />} />
               <Route
                 path="/admin/panel"
@@ -160,7 +173,7 @@ const App = () => (
                 }
               />
 
-              {/* ── Customer portal ── */}
+              {/* ── Customer portal ────────────────────────────────────────── */}
               <Route path="/customer/auth" element={<CustomerAuth />} />
               <Route
                 path="/customer/dashboard"
@@ -171,7 +184,7 @@ const App = () => (
                 }
               />
 
-              {/* ── Business registration ── */}
+              {/* ── Business registration (org admin signs up) ──────────────── */}
               <Route
                 path="/register-business"
                 element={
@@ -181,7 +194,7 @@ const App = () => (
                 }
               />
 
-              {/* ── Pending approval ── */}
+              {/* ── Pending approval waiting room ──────────────────────────── */}
               <Route
                 path="/pending-approval"
                 element={
@@ -191,7 +204,9 @@ const App = () => (
                 }
               />
 
-              {/* ── Authenticated designer + tenant-scoped routes ── */}
+              {/* ── Authenticated org-admin / staff routes ─────────────────── */}
+              {/* All wrapped in TenantGuard + AppLayout                        */}
+              {/* Individual pages add ProtectedRoute(adminOnly) as needed      */}
               <Route
                 element={
                   <TenantGuard>
@@ -199,38 +214,20 @@ const App = () => (
                   </TenantGuard>
                 }
               >
-                <Route path="/dashboard" element={<Dashboard />} />
-                <Route path="/customers" element={<Customers />} />
+                {/* Available to all roles (feature + permission flags apply via sidebar) */}
+                <Route path="/dashboard"    element={<Dashboard />} />
+                <Route path="/customers"    element={<Customers />} />
                 <Route path="/customers/:id" element={<CustomerDetail />} />
                 <Route path="/measurements" element={<Measurements />} />
-                <Route path="/designs" element={<Designs />} />
-                <Route path="/categories" element={<Categories />} />
-                <Route path="/inbox" element={<DesignerInbox />} />
-                <Route path="/orders" element={<OrdersManagement />} />
-                <Route
-                  path="/reports"
-                  element={
-                    <ProtectedRoute adminOnly>
-                      <Reports />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/settings"
-                  element={
-                    <ProtectedRoute adminOnly>
-                      <OrganizationSettings />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/staff"
-                  element={
-                    <ProtectedRoute adminOnly>
-                      <StaffManagement />
-                    </ProtectedRoute>
-                  }
-                />
+                <Route path="/designs"      element={<Designs />} />
+                <Route path="/categories"   element={<Categories />} />
+                <Route path="/inbox"        element={<DesignerInbox />} />
+                <Route path="/orders"       element={<OrdersManagement />} />
+
+                {/* Org-admin only */}
+                <Route path="/reports"  element={<ProtectedRoute adminOnly><Reports /></ProtectedRoute>} />
+                <Route path="/settings" element={<ProtectedRoute adminOnly><OrganizationSettings /></ProtectedRoute>} />
+                <Route path="/staff"    element={<ProtectedRoute adminOnly><StaffManagement /></ProtectedRoute>} />
               </Route>
 
               <Route path="*" element={<NotFound />} />
