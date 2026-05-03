@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 import fallbackLogo from "@/assets/logo.jpeg";
 import CustomerChat from "@/components/customer/CustomerChat";
+import CustomerProfileDialog from "@/components/customer/CustomerProfileDialog";
 
 interface CartItem {
   id: string;
