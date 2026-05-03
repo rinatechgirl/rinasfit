@@ -378,6 +378,8 @@ const CustomerDashboard = () => {
           onClose={() => setActiveChatTenant(null)}
         />
       )}
+
+      <CustomerProfileDialog open={profileOpen} onOpenChange={setProfileOpen} />
     </div>
   );
 };
