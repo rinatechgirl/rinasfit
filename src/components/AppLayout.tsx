@@ -118,6 +118,13 @@ const AppLayout = () => {
 
         <div className="pt-4 pb-1">
           <p className="px-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60 mb-1">
+            Work
+          </p>
+        </div>
+        {WORK_ITEMS.map((item) => <NavLink key={item.to} item={item} />)}
+
+        <div className="pt-4 pb-1">
+          <p className="px-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60 mb-1">
             Discover
           </p>
         </div>
