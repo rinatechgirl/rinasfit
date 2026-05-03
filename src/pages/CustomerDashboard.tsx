@@ -241,9 +241,9 @@ const CustomerDashboard = () => {
                         ? <img src={item.designs.image_url} alt={item.designs.title} className="w-full h-full object-cover" loading="lazy" />
                         : <div className="w-full h-full flex items-center justify-center"><ImageIcon className="w-8 h-8 text-muted-foreground/20" /></div>}
                     </div>
-                    <CardContent className="p-4 space-y-3">
+                    <CardContent className="p-3 space-y-2">
                       <div>
-                        <p className="font-semibold text-foreground">{item.designs?.title}</p>
+                        <p className="font-semibold text-foreground text-sm line-clamp-1">{item.designs?.title}</p>
                         <div className="flex items-center gap-1.5 mt-1">
                           <img
                             src={item.tenants?.logo_url ?? fallbackLogo}
@@ -251,21 +251,22 @@ const CustomerDashboard = () => {
                             className="w-4 h-4 rounded-full object-contain border border-border"
                             onError={(e) => { (e.currentTarget as HTMLImageElement).src = fallbackLogo; }}
                           />
-                          <span className="text-xs text-muted-foreground">{item.tenants?.business_name}</span>
+                          <span className="text-xs text-muted-foreground truncate">{item.tenants?.business_name}</span>
                         </div>
                       </div>
-                      <div className="flex gap-2">
-                        <Button size="sm" className="flex-1" onClick={() => placeOrder(item)}>
-                          Place Order
-                        </Button>
+                      <Button size="sm" className="w-full h-8 text-xs" onClick={() => placeOrder(item)}>
+                        Place Order
+                      </Button>
+                      <div className="flex gap-1">
                         <Button
                           size="sm"
                           variant="outline"
+                          className="flex-1 h-7 text-xs"
                           onClick={() => setActiveChatTenant({ tenantId: item.tenant_id, name: item.tenants.business_name })}
                         >
-                          <MessageCircle className="w-3.5 h-3.5" />
+                          <MessageCircle className="w-3 h-3 mr-1" /> Chat
                         </Button>
-                        <Button size="sm" variant="ghost" onClick={() => removeFromCart(item.id)} className="text-destructive hover:text-destructive">
+                        <Button size="sm" variant="ghost" className="h-7 text-xs text-destructive hover:text-destructive" onClick={() => removeFromCart(item.id)}>
                           Remove
                         </Button>
                       </div>
