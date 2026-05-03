@@ -233,12 +233,12 @@ const CustomerDashboard = () => {
                 </CardContent>
               </Card>
             ) : (
-              <div className="grid sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
                 {cartItems.map((item) => (
                   <Card key={item.id} className="border-border/60 overflow-hidden">
-                    <div className="aspect-video bg-muted relative overflow-hidden">
+                    <div className="aspect-square bg-muted relative overflow-hidden">
                       {item.designs?.image_url
-                        ? <img src={item.designs.image_url} alt={item.designs.title} className="w-full h-full object-cover" />
+                        ? <img src={item.designs.image_url} alt={item.designs.title} className="w-full h-full object-cover" loading="lazy" />
                         : <div className="w-full h-full flex items-center justify-center"><ImageIcon className="w-8 h-8 text-muted-foreground/20" /></div>}
                     </div>
                     <CardContent className="p-4 space-y-3">
