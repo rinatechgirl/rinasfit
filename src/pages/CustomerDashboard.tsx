@@ -62,6 +62,7 @@ const CustomerDashboard = () => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
   const [activeChatTenant, setActiveChatTenant] = useState<{ tenantId: string; name: string; orderId?: string } | null>(null);
+  const [profileOpen, setProfileOpen] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !customer) {
