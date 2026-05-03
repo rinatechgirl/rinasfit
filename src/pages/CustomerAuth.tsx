@@ -16,7 +16,7 @@ const CustomerAuth = () => {
   const designId = searchParams.get("designId");
   const tenantId = searchParams.get("tenantId");
 
-  const [mode, setMode] = useState<"login" | "signup">("signup");
+  const [mode, setMode] = useState<"login" | "signup">("login");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");

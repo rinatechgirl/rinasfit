@@ -25,26 +25,29 @@ interface Order {
 const STATUS_OPTIONS = [
   { value: "pending",     label: "Pending" },
   { value: "confirmed",   label: "Confirmed" },
-  { value: "in_progress", label: "In Progress" },
-  { value: "ready",       label: "Ready" },
+  { value: "in_progress", label: "In Progress (Being Made)" },
+  { value: "ready",       label: "Ready for Pickup" },
+  { value: "shipped",     label: "Out for Delivery" },
   { value: "delivered",   label: "Delivered" },
   { value: "cancelled",   label: "Cancelled" },
 ];
 
 const STATUS_COLORS: Record<string, string> = {
-  pending:     "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400",
+  pending:     "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400",
   confirmed:   "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
   in_progress: "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-400",
-  ready:       "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
-  delivered:   "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-400",
+  ready:       "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400",
+  shipped:     "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400",
+  delivered:   "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400",
   cancelled:   "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
 };
 
-// Map order status to email template
+// Map order status → email template key
 const STATUS_EMAIL: Record<string, string> = {
   confirmed:   "order_confirmed",
   in_progress: "order_in_progress",
   ready:       "order_ready",
+  shipped:     "order_shipped",
   delivered:   "order_delivered",
 };
 
@@ -97,8 +100,9 @@ const OrdersManagement = () => {
 
     const timestamps: Record<string, string> = {};
     if (newStatus === "in_progress") timestamps.production_started_at = new Date().toISOString();
-    if (newStatus === "ready") timestamps.ready_at = new Date().toISOString();
-    if (newStatus === "delivered") timestamps.delivered_at = new Date().toISOString();
+    if (newStatus === "ready")       timestamps.ready_at               = new Date().toISOString();
+    if (newStatus === "shipped")     timestamps.shipped_at             = new Date().toISOString();
+    if (newStatus === "delivered")   timestamps.delivered_at           = new Date().toISOString();
 
     const { error } = await supabase
       .from("orders")

@@ -7,6 +7,7 @@ import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { CustomerAuthProvider, useCustomerAuth } from "@/hooks/useCustomerAuth";
 import { getTenantSlugFromHostname } from "@/hooks/useTenantSlug";
 import AppLayout from "@/components/AppLayout";
+import PlatformAdminLayout from "@/components/PlatformAdminLayout";
 import Auth from "@/pages/Auth";
 import AdminLogin from "@/pages/AdminLogin";
 import Dashboard from "@/pages/Dashboard";
@@ -52,8 +53,8 @@ function LoadingScreen() {
 // ─── Designer route guards ────────────────────────────────────────────────────
 
 /**
- * Requires a logged-in designer/staff user.
- * adminOnly: further restricts to org-admin or platform-admin.
+ * Requires authenticated designer/staff.
+ * adminOnly: additionally restricts to org-admin or platform-admin.
  */
 const ProtectedRoute = ({
   children,
@@ -71,7 +72,7 @@ const ProtectedRoute = ({
 
 /**
  * Ensures the user belongs to an approved tenant.
- * Platform admins bypass this — they have no tenant but full access.
+ * Platform admins bypass (they have no tenant but have platform-wide access).
  */
 const TenantGuard = ({ children }: { children: React.ReactNode }) => {
   const { user, loading, tenantId, tenant, isPlatformAdmin } = useAuth();
@@ -97,8 +98,7 @@ const RegisterGuard = ({ children }: { children: React.ReactNode }) => {
 };
 
 /**
- * Only platform admins may access the admin panel.
- * All other roles are redirected to their respective dashboards.
+ * Only verified platform admins may access this area.
  */
 const PlatformAdminRoute = ({ children }: { children: React.ReactNode }) => {
   const { user, loading, isPlatformAdmin } = useAuth();
@@ -109,26 +109,49 @@ const PlatformAdminRoute = ({ children }: { children: React.ReactNode }) => {
 };
 
 /**
- * Auth page gate: signed-in users are redirected to their dashboard.
- * Platform admins → /admin/panel
- * Everyone else  → /dashboard
+ * /auth gate — signed-in users are routed to their correct destination.
+ * Platform admin → /admin/panel
+ * Org/staff with tenant → /dashboard
+ * Org/staff without tenant → /register-business (they need to register first)
  */
 const AuthGate = () => {
-  const { user, loading, isPlatformAdmin } = useAuth();
+  const { user, loading, isPlatformAdmin, tenantId } = useAuth();
   if (loading) return <LoadingScreen />;
   if (user && isPlatformAdmin) return <Navigate to="/admin/panel" replace />;
-  if (user) return <Navigate to="/dashboard" replace />;
+  if (user && tenantId) return <Navigate to="/dashboard" replace />;
+  if (user) return <Navigate to="/register-business" replace />;
   return <Auth />;
 };
 
 /**
- * Landing page gate: signed-in users skip the marketing page.
+ * Landing page gate.
+ *
+ * On a TENANT SUBDOMAIN (slug.rinasfit.com):
+ *   → Always send to /auth so TenantLogin shows the branded portal.
+ *     If already logged in, TenantGuard + AppLayout handle it.
+ *
+ * On the MAIN DOMAIN (rinasfit.com):
+ *   → Platform admin → /admin/panel
+ *   → Logged-in user with tenant → /dashboard
+ *   → Logged-in user WITHOUT tenant → stay on landing (no forced register)
+ *   → Guest → show landing page
  */
 const LandingGate = () => {
-  const { user, loading, isPlatformAdmin } = useAuth();
+  const { user, loading, isPlatformAdmin, tenantId } = useAuth();
+  const subdomainSlug = getTenantSlugFromHostname();
+
   if (loading) return <LoadingScreen />;
+
+  // Tenant subdomain root URL — send to branded login/dashboard
+  if (subdomainSlug) {
+    if (user && tenantId) return <Navigate to="/dashboard" replace />;
+    return <Navigate to="/auth" replace />;
+  }
+
+  // Main platform domain
   if (user && isPlatformAdmin) return <Navigate to="/admin/panel" replace />;
-  if (user) return <Navigate to="/dashboard" replace />;
+  if (user && tenantId)        return <Navigate to="/dashboard" replace />;
+  // Logged-in but no tenant: show landing so they can browse or register voluntarily
   return <Landing />;
 };
 
@@ -154,26 +177,25 @@ const App = () => (
             <Routes>
 
               {/* ── Public ── */}
-              <Route path="/"              element={<LandingGate />} />
-              <Route path="/auth"          element={<AuthGate />} />
+              <Route path="/"               element={<LandingGate />} />
+              <Route path="/auth"           element={<AuthGate />} />
               <Route path="/reset-password" element={<ResetPassword />} />
-              <Route path="/magazine"      element={<Magazine />} />
-              <Route path="/catalogue"     element={<Catalogue />} />
+              <Route path="/magazine"       element={<Magazine />} />
+              <Route path="/catalogue"      element={<Catalogue />} />
 
-              {/* ── Platform admin ─────────────────────────────────────────── */}
-              {/* /admin = dedicated login (no link from public UI)             */}
-              {/* /admin/panel = platform control (guarded)                     */}
+              {/* ── Platform admin — dedicated login + panel with layout ── */}
               <Route path="/admin" element={<AdminLogin />} />
               <Route
-                path="/admin/panel"
                 element={
                   <PlatformAdminRoute>
-                    <AdminPanel />
+                    <PlatformAdminLayout />
                   </PlatformAdminRoute>
                 }
-              />
+              >
+                <Route path="/admin/panel" element={<AdminPanel />} />
+              </Route>
 
-              {/* ── Customer portal ────────────────────────────────────────── */}
+              {/* ── Customer portal ── */}
               <Route path="/customer/auth" element={<CustomerAuth />} />
               <Route
                 path="/customer/dashboard"
@@ -184,7 +206,7 @@ const App = () => (
                 }
               />
 
-              {/* ── Business registration (org admin signs up) ──────────────── */}
+              {/* ── Business registration (new org admin onboarding) ── */}
               <Route
                 path="/register-business"
                 element={
@@ -194,7 +216,7 @@ const App = () => (
                 }
               />
 
-              {/* ── Pending approval waiting room ──────────────────────────── */}
+              {/* ── Pending approval waiting room ── */}
               <Route
                 path="/pending-approval"
                 element={
@@ -204,9 +226,7 @@ const App = () => (
                 }
               />
 
-              {/* ── Authenticated org-admin / staff routes ─────────────────── */}
-              {/* All wrapped in TenantGuard + AppLayout                        */}
-              {/* Individual pages add ProtectedRoute(adminOnly) as needed      */}
+              {/* ── Authenticated org-admin / staff routes ── */}
               <Route
                 element={
                   <TenantGuard>
@@ -214,15 +234,15 @@ const App = () => (
                   </TenantGuard>
                 }
               >
-                {/* Available to all roles (feature + permission flags apply via sidebar) */}
-                <Route path="/dashboard"    element={<Dashboard />} />
-                <Route path="/customers"    element={<Customers />} />
+                {/* Available to all (feature + permission flags applied via sidebar) */}
+                <Route path="/dashboard"     element={<Dashboard />} />
+                <Route path="/customers"     element={<Customers />} />
                 <Route path="/customers/:id" element={<CustomerDetail />} />
-                <Route path="/measurements" element={<Measurements />} />
-                <Route path="/designs"      element={<Designs />} />
-                <Route path="/categories"   element={<Categories />} />
-                <Route path="/inbox"        element={<DesignerInbox />} />
-                <Route path="/orders"       element={<OrdersManagement />} />
+                <Route path="/measurements"  element={<Measurements />} />
+                <Route path="/designs"       element={<Designs />} />
+                <Route path="/categories"    element={<Categories />} />
+                <Route path="/inbox"         element={<DesignerInbox />} />
+                <Route path="/orders"        element={<OrdersManagement />} />
 
                 {/* Org-admin only */}
                 <Route path="/reports"  element={<ProtectedRoute adminOnly><Reports /></ProtectedRoute>} />

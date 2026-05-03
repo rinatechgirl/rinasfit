@@ -197,7 +197,7 @@ const Catalogue = () => {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => navigate(`/auth`)}
+                  onClick={() => navigate(`/customer/auth`)}
                 >
                   Sign in to book
                 </Button>
@@ -350,7 +350,14 @@ const Catalogue = () => {
                   <p className="text-sm text-foreground mt-2">{detail.description}</p>
                 )}
               </div>
-              <Button className="w-full mt-4" onClick={() => navigate("/auth")}>
+              <Button
+                className="w-full mt-4"
+                onClick={() => navigate(
+                  tenant
+                    ? `/customer/auth?designId=${detail?.id}&tenantId=${tenant.id}&returnTo=/customer/dashboard`
+                    : "/customer/auth"
+                )}
+              >
                 Book this design
               </Button>
             </>

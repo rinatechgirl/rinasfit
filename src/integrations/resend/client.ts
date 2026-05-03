@@ -15,6 +15,7 @@ export type EmailTemplate =
   | "order_confirmed"
   | "order_in_progress"
   | "order_ready"
+  | "order_shipped"
   | "order_delivered"
   | "password_reset";
 
@@ -32,7 +33,8 @@ export async function sendEmail(payload: SendEmailPayload): Promise<boolean> {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          // Uses VITE_SUPABASE_PUBLISHABLE_KEY (the anon/public key)
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
         },
         body: JSON.stringify(payload),
       }

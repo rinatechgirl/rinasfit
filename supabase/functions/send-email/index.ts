@@ -83,6 +83,20 @@ function getEmailContent(template: string, data: Record<string, string | number>
         ` + footer,
       };
 
+    case "order_shipped":
+      return {
+        subject: `Your order is on its way — ${data.booking_code}`,
+        html: brand + `
+          <h2 style="font-size:22px;margin:0 0 8px">Your outfit is out for delivery! 🚚</h2>
+          <p style="color:#6b7280;margin:0 0 24px">Hi ${data.customer_name}, great news! <strong>${data.business_name}</strong> has dispatched your order and it's on its way to you.</p>
+          <div style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:16px 20px;margin-bottom:20px">
+            <p style="margin:0;font-size:13px;color:#5b21b6"><strong>Status:</strong> Out for Delivery 🟣</p>
+            <p style="margin:6px 0 0;font-size:13px;color:#5b21b6"><strong>Booking Code:</strong> ${data.booking_code}</p>
+          </div>
+          <p style="color:#6b7280;font-size:14px">Keep an eye out for your delivery. You can track your order at <a href="https://rinasfit.com/customer/dashboard" style="color:#1a1a1a">rinasfit.com</a>.</p>
+        ` + footer,
+      };
+
     case "order_delivered":
       return {
         subject: `Delivered! Order ${data.booking_code} complete`,

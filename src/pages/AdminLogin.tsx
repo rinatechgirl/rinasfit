@@ -75,22 +75,25 @@ const AdminLogin = () => {
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="w-full max-w-sm space-y-8">
         {/* Header */}
-        <div className="flex flex-col items-center gap-3 text-center">
-          <div className="w-14 h-14 rounded-2xl bg-foreground flex items-center justify-center">
-            <ShieldCheck className="w-7 h-7 text-background" />
+        <div className="flex flex-col items-center gap-4 text-center">
+          {/* Platform logo */}
+          <div className="relative">
+            <img
+              src={fallbackLogo}
+              alt="Rina's Fit"
+              className="w-16 h-16 object-contain rounded-2xl border border-border bg-background p-1 shadow-sm"
+            />
+            <div className="absolute -bottom-1.5 -right-1.5 w-6 h-6 rounded-full bg-violet-600 flex items-center justify-center shadow">
+              <ShieldCheck className="w-3.5 h-3.5 text-white" />
+            </div>
           </div>
           <div>
-            <div className="flex items-center justify-center gap-2 mb-1">
-              <img
-                src={fallbackLogo}
-                alt="Rina's Fit"
-                className="w-5 h-5 object-contain rounded"
-              />
-              <span className="text-sm font-semibold text-foreground">Rina's Fit</span>
-            </div>
-            <h1 className="text-lg font-semibold text-foreground">Platform Admin</h1>
+            <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-1">
+              Rina's Fit
+            </p>
+            <h1 className="text-xl font-semibold text-foreground">Platform Admin</h1>
             <p className="text-xs text-muted-foreground mt-1">
-              Restricted access. Authorised personnel only.
+              Restricted access — authorised personnel only.
             </p>
           </div>
         </div>
