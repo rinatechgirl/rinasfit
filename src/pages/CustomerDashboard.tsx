@@ -115,9 +115,8 @@ const CustomerDashboard = () => {
         design_id: item.design_id,
         tenant_id: item.tenant_id,
         created_by: customer.id,
-        customer_id: customer.id, // legacy field
         status: "pending",
-      })
+      } as any)
       .select("id")
       .single();
 
