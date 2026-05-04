@@ -24,6 +24,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import fallbackLogo from "@/assets/logo.jpeg";
+import NotificationBell from "@/components/NotificationBell";
 
 // ─── Nav item types ───────────────────────────────────────────────────────────
 
@@ -231,13 +232,16 @@ const AppLayout = () => {
           <div className="px-3 py-2 rounded-lg bg-muted/40">
             <div className="flex items-center justify-between gap-2 mb-1">
               <p className="text-xs font-medium text-foreground truncate flex-1">{user?.email}</p>
-              <button
-                onClick={toggle}
-                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
-                title={isDark ? "Light mode" : "Dark mode"}
-              >
-                {isDark ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
-              </button>
+              <div className="flex items-center gap-0.5 shrink-0">
+                <NotificationBell userId={user?.id} />
+                <button
+                  onClick={toggle}
+                  className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                  title={isDark ? "Light mode" : "Dark mode"}
+                >
+                  {isDark ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+                </button>
+              </div>
             </div>
             <span className={cn(
               "inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold",
@@ -307,9 +311,9 @@ const AppLayout = () => {
               className="w-7 h-7 rounded-lg object-contain border border-border bg-background p-0.5 shrink-0"
               onError={(e) => { (e.currentTarget as HTMLImageElement).src = fallbackLogo; }}
             />
-            <span className="text-sm font-semibold text-foreground truncate max-w-[140px]">{orgName}</span>
+            <span className="text-sm font-semibold text-foreground truncate max-w-[120px]">{orgName}</span>
           </div>
-          <div className="w-10 shrink-0" />
+          <NotificationBell userId={user?.id} />
         </header>
 
         {/* Page content */}

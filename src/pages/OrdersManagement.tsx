@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -57,7 +57,7 @@ const OrdersManagement = () => {
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
 
-  const fetchOrders = async () => {
+  const fetchOrders = useCallback(async () => {
     if (!tenantId) return;
     setLoading(true);
 
@@ -74,7 +74,6 @@ const OrdersManagement = () => {
 
     if (error) { toast.error(error.message); setLoading(false); return; }
 
-    // Fetch customer account info separately since there's no FK relation
     const customerIds = [...new Set((rawOrders ?? []).map((o: any) => o.customer_user_id).filter(Boolean))];
     const accountMap = new Map<string, { full_name: string; email: string }>();
     if (customerIds.length > 0) {
@@ -91,9 +90,23 @@ const OrdersManagement = () => {
     }));
     setOrders(mapped as Order[]);
     setLoading(false);
-  };
+  }, [tenantId]);
 
-  useEffect(() => { fetchOrders(); }, [tenantId]);
+  useEffect(() => { fetchOrders(); }, [fetchOrders]);
+
+  // ── Realtime: new orders appear instantly ─────────────────────────────────────
+  useEffect(() => {
+    if (!tenantId) return;
+    const channel = supabase
+      .channel(`designer-orders-${tenantId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "orders", filter: `tenant_id=eq.${tenantId}` },
+        () => { fetchOrders(); }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [tenantId, fetchOrders]);
 
   const updateStatus = async (order: Order, newStatus: string) => {
     setUpdatingId(order.id);
@@ -138,7 +151,27 @@ const OrdersManagement = () => {
       });
     }
 
-    toast.success(`Order updated to "${newStatus}" — customer notified by email.`);
+    // Push in-app notification to customer
+    const statusLabels: Record<string, string> = {
+      confirmed:   "confirmed your order ✂️",
+      in_progress: "started making your outfit 📐",
+      ready:       "your outfit is ready for collection 🛍️",
+      shipped:     "your outfit is on its way 📦",
+      delivered:   "your outfit has been delivered ✨",
+      cancelled:   "cancelled your order",
+    };
+    const statusLabel = statusLabels[newStatus];
+    if (statusLabel && order.customer_user_id) {
+      await supabase.from("notifications").insert({
+        user_id:   order.customer_user_id,
+        tenant_id: tenantId,
+        order_id:  order.id,
+        message:   `${tenant?.business_name ?? "Your designer"} ${statusLabel} (${order.booking_code ?? order.id})`,
+        is_read:   false,
+      } as any);
+    }
+
+    toast.success(`Order updated to "${newStatus}" — customer notified.`);
     fetchOrders();
     setUpdatingId(null);
   };

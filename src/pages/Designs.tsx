@@ -27,6 +27,7 @@ interface Design {
   uploaded_by: string | null;
   gender: string | null;
   is_public: boolean;
+  price: number | null;
   created_at: string;
 }
 interface Category { id: string; name: string; }
@@ -46,7 +47,7 @@ const Designs = () => {
   const [filterGender, setFilterGender]   = useState("all");
   const [dialogOpen, setDialogOpen]       = useState(false);
   const [editingId, setEditingId]         = useState<string | null>(null);
-  const [form, setForm]                   = useState({ title: "", description: "", category_id: "", gender: "Unisex" });
+  const [form, setForm]                   = useState({ title: "", description: "", category_id: "", gender: "Unisex", price: "" });
   const [frontFile, setFrontFile]         = useState<File | null>(null);
   const [backFile, setBackFile]           = useState<File | null>(null);
   const [loading, setLoading]             = useState(false);
@@ -119,6 +120,7 @@ const Designs = () => {
       backUrl = url;
     }
 
+    const priceVal = form.price.trim() ? parseFloat(form.price) : null;
     const payload: any = {
       title:              form.title.trim(),
       description:        form.description.trim() || null,
@@ -128,6 +130,7 @@ const Designs = () => {
       back_view_image_url: backUrl,
       uploaded_by:        existing?.uploaded_by ?? user?.id ?? null,
       tenant_id:          tenantId,
+      price:              (priceVal !== null && !isNaN(priceVal)) ? priceVal : null,
     };
 
     if (editingId) {
@@ -148,7 +151,7 @@ const Designs = () => {
 
   const resetForm = () => {
     setEditingId(null);
-    setForm({ title: "", description: "", category_id: "", gender: "Unisex" });
+    setForm({ title: "", description: "", category_id: "", gender: "Unisex", price: "" });
     setFrontFile(null);
     setBackFile(null);
   };
@@ -260,6 +263,21 @@ const Designs = () => {
                       </SelectContent>
                     </Select>
                   </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="d-price">Price (NGN) — shown to customers</Label>
+                  <Input
+                    id="d-price"
+                    type="number"
+                    min="0"
+                    step="100"
+                    placeholder="e.g. 45000  (leave blank to negotiate)"
+                    value={form.price}
+                    onChange={(e) => setForm({ ...form, price: e.target.value })}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Setting a price lets customers pay immediately when ordering. Leave blank to agree on price via chat.
+                  </p>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-2">
@@ -405,6 +423,7 @@ const Designs = () => {
                             description: d.description ?? "",
                             category_id: d.category_id ?? "",
                             gender:      d.gender ?? "Unisex",
+                            price:       d.price != null ? String(d.price) : "",
                           });
                           setEditingId(d.id);
                           setDialogOpen(true);
@@ -427,12 +446,24 @@ const Designs = () => {
                 </div>
 
                 <CardContent className="p-4">
-                  <p className="font-semibold text-foreground text-sm leading-tight">{d.title}</p>
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="font-semibold text-foreground text-sm leading-tight">{d.title}</p>
+                    {d.price != null && (
+                      <span className="text-xs font-bold text-accent shrink-0">
+                        ₦{d.price.toLocaleString()}
+                      </span>
+                    )}
+                  </div>
                   <div className="flex gap-2 items-center mt-1.5 flex-wrap">
                     <p className="text-xs text-primary font-medium">{getCategoryName(d.category_id)}</p>
                     {d.gender && (
                       <span className="text-[10px] bg-secondary text-secondary-foreground px-2 py-0.5 rounded-full font-medium">
                         {d.gender}
+                      </span>
+                    )}
+                    {d.price == null && (
+                      <span className="text-[10px] bg-muted text-muted-foreground px-2 py-0.5 rounded-full">
+                        Price on request
                       </span>
                     )}
                   </div>

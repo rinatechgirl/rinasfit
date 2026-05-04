@@ -150,6 +150,47 @@ serve(async (req) => {
       });
     }
 
+    // ── Notify both parties ──────────────────────────────────────────────────
+    // Re-fetch order with design title for the notification message
+    const { data: fullOrder } = await supabaseAdmin
+      .from("orders")
+      .select("customer_user_id, tenant_id, booking_code, designs(title)")
+      .eq("id", order_id)
+      .single();
+
+    if (fullOrder) {
+      const bookingCode = (fullOrder as any).booking_code ?? order_id;
+      const designTitle = (fullOrder as any).designs?.title ?? "your design";
+
+      // Notify customer — confirm their payment
+      await supabaseAdmin.from("notifications").insert({
+        user_id:   (fullOrder as any).customer_user_id,
+        tenant_id: (fullOrder as any).tenant_id,
+        order_id:  order_id,
+        message:   `Payment confirmed for "${designTitle}" (${bookingCode}). Your outfit is now being made! 🎉`,
+        is_read:   false,
+      });
+
+      // Notify designer (tenant admin) — payment received
+      const { data: adminUser } = await supabaseAdmin
+        .from("user_roles")
+        .select("user_id")
+        .eq("tenant_id", (fullOrder as any).tenant_id)
+        .eq("role", "admin")
+        .limit(1)
+        .maybeSingle();
+
+      if (adminUser) {
+        await supabaseAdmin.from("notifications").insert({
+          user_id:   (adminUser as any).user_id,
+          tenant_id: (fullOrder as any).tenant_id,
+          order_id:  order_id,
+          message:   `💰 Payment received for "${designTitle}" (${bookingCode}). Start production!`,
+          is_read:   false,
+        });
+      }
+    }
+
     return new Response(JSON.stringify({ success: true }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

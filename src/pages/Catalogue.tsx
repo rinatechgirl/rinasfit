@@ -26,6 +26,7 @@ interface PublicDesign {
   back_view_image_url: string | null;
   gender: string | null;
   category_name: string | null;
+  price: number | null;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -87,6 +88,7 @@ const Catalogue = () => {
           image_url,
           back_view_image_url,
           gender,
+          price,
           categories ( name )
         `)
         .eq("tenant_id", tenantData.id)
@@ -101,6 +103,7 @@ const Catalogue = () => {
         back_view_image_url: d.back_view_image_url,
         gender: d.gender,
         category_name: d.categories?.name ?? null,
+        price: d.price ?? null,
       }));
 
       setDesigns(mapped);
@@ -292,15 +295,29 @@ const Catalogue = () => {
                     </span>
                   </div>
                   <div className="p-3">
-                    <p className="text-sm font-medium text-foreground leading-tight">{d.title}</p>
+                    <div className="flex items-start justify-between gap-1">
+                      <p className="text-sm font-medium text-foreground leading-tight">{d.title}</p>
+                      {d.price != null && (
+                        <span className="text-xs font-bold text-accent shrink-0">
+                          ₦{d.price.toLocaleString()}
+                        </span>
+                      )}
+                    </div>
                     {d.category_name && (
                       <p className="text-xs text-muted-foreground mt-0.5">{d.category_name}</p>
                     )}
-                    {d.gender && (
-                      <span className="inline-block mt-1.5 text-[10px] bg-secondary text-secondary-foreground px-2 py-0.5 rounded-full">
-                        {d.gender}
-                      </span>
-                    )}
+                    <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                      {d.gender && (
+                        <span className="text-[10px] bg-secondary text-secondary-foreground px-2 py-0.5 rounded-full">
+                          {d.gender}
+                        </span>
+                      )}
+                      {d.price == null && (
+                        <span className="text-[10px] bg-muted text-muted-foreground px-2 py-0.5 rounded-full">
+                          Price on request
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
               );
@@ -336,6 +353,18 @@ const Catalogue = () => {
                 </div>
               </div>
               <div className="mt-2 space-y-1.5">
+                {detail.price != null && (
+                  <div className="flex items-center gap-2 p-3 bg-accent/10 rounded-lg border border-accent/20">
+                    <span className="text-sm text-muted-foreground">Price:</span>
+                    <span className="text-lg font-bold text-accent">₦{detail.price.toLocaleString()}</span>
+                  </div>
+                )}
+                {detail.price == null && (
+                  <div className="flex items-center gap-2 p-3 bg-muted/50 rounded-lg border border-border">
+                    <span className="text-sm text-muted-foreground">Price:</span>
+                    <span className="text-sm text-foreground font-medium">Agreed via chat after booking</span>
+                  </div>
+                )}
                 {detail.category_name && (
                   <p className="text-xs text-muted-foreground">
                     <span className="font-semibold">Category:</span> {detail.category_name}

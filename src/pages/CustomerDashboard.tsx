@@ -1,9 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useCustomerAuth } from "@/hooks/useCustomerAuth";
 import { useTheme } from "@/hooks/useTheme";
-import { sendEmail } from "@/integrations/resend/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -11,8 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Loader2, ShoppingBag, MessageCircle, Package,
   Image as ImageIcon, LogOut, User, Sun, Moon,
-  CheckCircle2, Clock, Wrench, Truck, PackageCheck,
-  XCircle, ChevronRight,
+  XCircle, Hourglass, Scissors, Ruler, Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -20,6 +18,7 @@ import fallbackLogo from "@/assets/logo.jpeg";
 import CustomerChat from "@/components/customer/CustomerChat";
 import CustomerProfileDialog from "@/components/customer/CustomerProfileDialog";
 import CustomerMeasurementOrderDialog from "@/components/customer/CustomerMeasurementOrderDialog";
+import NotificationBell from "@/components/NotificationBell";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -28,8 +27,8 @@ interface CartItem {
   design_id: string;
   tenant_id: string;
   added_at: string;
-  designs: { title: string; image_url: string | null; description: string | null };
-  tenants: { business_name: string; slug: string; logo_url: string | null };
+  designs: { title: string; image_url: string | null; description: string | null; price: number | null };
+  tenants: { business_name: string; slug: string; logo_url: string | null; currency?: string };
 }
 
 interface Order {
@@ -58,13 +57,13 @@ const STATUS_CONFIG: Record<string, {
   color: string;
   icon: React.ElementType;
 }> = {
-  pending:     { label: "Pending",          description: "Waiting for the designer to confirm",         color: "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400",   icon: Clock         },
-  confirmed:   { label: "Confirmed",        description: "Designer confirmed — awaiting payment",       color: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",       icon: CheckCircle2  },
-  in_progress: { label: "Being Made",       description: "Your outfit is being crafted",                color: "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-400", icon: Wrench        },
-  ready:       { label: "Ready",            description: "Your outfit is ready for collection",         color: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400", icon: PackageCheck },
-  shipped:     { label: "Out for Delivery", description: "Your outfit is on its way to you",            color: "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400", icon: Truck        },
-  delivered:   { label: "Delivered",        description: "Your outfit has arrived — enjoy it!",         color: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400",      icon: CheckCircle2  },
-  cancelled:   { label: "Cancelled",        description: "This order was cancelled",                    color: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",           icon: XCircle       },
+  pending:     { label: "Pending",          description: "Waiting for the designer to start",           color: "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400",      icon: Hourglass  },
+  confirmed:   { label: "Confirmed",        description: "Fabric being cut — production starting soon", color: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",          icon: Scissors   },
+  in_progress: { label: "Being Made",       description: "Your outfit is being crafted with care",      color: "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-400", icon: Ruler      },
+  ready:       { label: "Ready",            description: "Your outfit is ready for collection",         color: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400", icon: ShoppingBag },
+  shipped:     { label: "Out for Delivery", description: "Your outfit is on its way to you",            color: "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400", icon: Package    },
+  delivered:   { label: "Delivered",        description: "Your outfit has arrived — wear it with joy!", color: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400",          icon: Sparkles   },
+  cancelled:   { label: "Cancelled",        description: "This order was cancelled",                    color: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",              icon: XCircle    },
 };
 
 // ─── Order Timeline ────────────────────────────────────────────────────────────
@@ -120,7 +119,6 @@ const CustomerDashboard = () => {
   const [cartItems, setCartItems]         = useState<CartItem[]>([]);
   const [orders, setOrders]               = useState<Order[]>([]);
   const [dataLoading, setDataLoading]     = useState(true);
-  const [placingIds, setPlacingIds]       = useState<Set<string>>(new Set());
   const [pendingOrderItem, setPendingOrderItem] = useState<CartItem | null>(null);
   const [activeChatTenant, setActiveChatTenant] = useState<{
     tenantId: string; name: string; orderId?: string;
@@ -133,14 +131,14 @@ const CustomerDashboard = () => {
     }
   }, [authLoading, customer, navigate]);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     if (!customer) return;
     setDataLoading(true);
 
     const [cartRes, ordersRes] = await Promise.all([
       supabase
         .from("cart_items")
-        .select("id, design_id, tenant_id, added_at, designs(title, image_url, description), tenants(business_name, slug, logo_url)")
+        .select("id, design_id, tenant_id, added_at, designs(title, image_url, description, price), tenants(business_name, slug, logo_url)")
         .eq("customer_user_id", customer.id)
         .order("added_at", { ascending: false }),
 
@@ -154,84 +152,35 @@ const CustomerDashboard = () => {
     setCartItems((cartRes.data as CartItem[]) ?? []);
     setOrders((ordersRes.data as Order[]) ?? []);
     setDataLoading(false);
-  };
+  }, [customer]);
 
   useEffect(() => {
     if (customer) fetchData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [customer]);
+  }, [customer, fetchData]);
+
+  // ── Realtime: refresh orders instantly when designer updates status ───────────
+  useEffect(() => {
+    if (!customer) return;
+    const channel = supabase
+      .channel(`customer-orders-${customer.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "orders",
+          filter: `customer_user_id=eq.${customer.id}`,
+        },
+        () => { fetchData(); }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [customer, fetchData]);
 
   const removeFromCart = async (itemId: string) => {
     const { error } = await supabase.from("cart_items").delete().eq("id", itemId);
     if (error) toast.error(error.message);
     else { toast.success("Removed from cart"); fetchData(); }
-  };
-
-  // ── Place Order (called after measurement dialog confirms) ──────────────────
-  const placeOrder = async (item: CartItem, measurementId: string | null) => {
-    if (!customer) return;
-    setPlacingIds((prev) => new Set(prev).add(item.id));
-
-    try {
-      // Create order (pending status)
-      const { data: order, error } = await supabase
-        .from("orders")
-        .insert({
-          customer_user_id: customer.id,
-          design_id:        item.design_id,
-          tenant_id:        item.tenant_id,
-          created_by:       customer.id,
-          status:           "pending",
-          ...(measurementId ? { measurement_id: measurementId } : {}),
-        } as any)
-        .select("id, booking_code")
-        .single();
-
-      if (error) { toast.error(error.message); return; }
-
-      // Remove from cart
-      await supabase.from("cart_items").delete().eq("id", item.id);
-
-      // ── Notify the org via chat ────────────────────────────────────────────
-      const bookingCode = (order as any).booking_code ?? order.id;
-      await supabase.from("chat_messages").insert({
-        tenant_id:        item.tenant_id,
-        customer_user_id: customer.id,
-        message:          `📦 New order placed!\n\nDesign: ${item.designs.title}\nBooking code: ${bookingCode}\n\nPlease reply to agree on a price so we can proceed.`,
-        sender_type:      "customer",
-        is_read:          false,
-      } as any);
-
-      // ── Send booking_code email to customer ────────────────────────────────
-      const customerEmail = account?.email ?? (await supabase.auth.getUser()).data.user?.email ?? "";
-      if (customerEmail) {
-        await sendEmail({
-          to:       customerEmail,
-          template: "booking_code",
-          data: {
-            customer_name: account?.full_name ?? "Customer",
-            booking_code:  bookingCode,
-            business_name: item.tenants.business_name,
-          },
-        });
-      }
-
-      toast.success("Order placed! The designer has been notified.");
-      fetchData();
-
-      // Open chat with the designer
-      setActiveChatTenant({
-        tenantId: item.tenant_id,
-        name:     item.tenants.business_name,
-        orderId:  order.id,
-      });
-    } finally {
-      setPlacingIds((prev) => {
-        const next = new Set(prev);
-        next.delete(item.id);
-        return next;
-      });
-    }
   };
 
   if (authLoading) {
@@ -260,6 +209,9 @@ const CustomerDashboard = () => {
 
           {/* Right controls */}
           <div className="flex items-center gap-2">
+            {/* Notifications */}
+            <NotificationBell userId={customer?.id} />
+
             {/* Theme toggle */}
             <button
               onClick={toggle}
@@ -357,7 +309,6 @@ const CustomerDashboard = () => {
             ) : (
               <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
                 {cartItems.map((item) => {
-                  const placing = placingIds.has(item.id);
                   return (
                     <Card key={item.id} className="border-border/60 overflow-hidden">
                       <div className="aspect-square bg-muted relative overflow-hidden">
@@ -367,7 +318,12 @@ const CustomerDashboard = () => {
                       </div>
                       <CardContent className="p-3 space-y-2">
                         <div>
-                          <p className="font-semibold text-foreground text-sm line-clamp-1">{item.designs?.title}</p>
+                          <div className="flex items-start justify-between gap-1">
+                            <p className="font-semibold text-foreground text-sm line-clamp-1">{item.designs?.title}</p>
+                            {item.designs?.price != null && (
+                              <span className="text-xs font-bold text-accent shrink-0">₦{item.designs.price.toLocaleString()}</span>
+                            )}
+                          </div>
                           <div className="flex items-center gap-1.5 mt-1">
                             <img
                               src={item.tenants?.logo_url ?? fallbackLogo}
@@ -377,18 +333,19 @@ const CustomerDashboard = () => {
                             />
                             <span className="text-xs text-muted-foreground truncate">{item.tenants?.business_name}</span>
                           </div>
+                          {item.designs?.price == null && (
+                            <p className="text-[10px] text-muted-foreground mt-0.5">Price agreed via chat</p>
+                          )}
                         </div>
                         <Button
                           size="sm"
                           className="w-full h-8 text-xs cursor-pointer"
                           onClick={() => setPendingOrderItem(item)}
-                          disabled={placing}
                         >
-                          {placing ? (
-                            <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" />Placing…</>
-                          ) : (
-                            "Place Order"
-                          )}
+                          {item.designs?.price
+                            ? `Order & Pay ₦${item.designs.price.toLocaleString()}`
+                            : "Place Order"
+                          }
                         </Button>
                         <div className="flex gap-1">
                           <Button
@@ -536,18 +493,18 @@ const CustomerDashboard = () => {
 
       <CustomerProfileDialog open={profileOpen} onOpenChange={setProfileOpen} />
 
-      {/* Measurement dialog — shown before the order is placed */}
+      {/* Measurement + payment dialog */}
       {pendingOrderItem && customer && (
         <CustomerMeasurementOrderDialog
           open={!!pendingOrderItem}
-          designTitle={pendingOrderItem.designs.title}
-          tenantId={pendingOrderItem.tenant_id}
+          item={pendingOrderItem}
           customerId={customer.id}
+          customerEmail={account?.email ?? ""}
+          customerName={account?.full_name ?? "Customer"}
           onClose={() => setPendingOrderItem(null)}
-          onConfirm={(measurementId) => {
-            const item = pendingOrderItem;
+          onSuccess={() => {
             setPendingOrderItem(null);
-            placeOrder(item, measurementId);
+            fetchData();
           }}
         />
       )}
