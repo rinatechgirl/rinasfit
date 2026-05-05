@@ -308,17 +308,17 @@ export default function Landing() {
             <div className="font-display text-5xl sm:text-6xl lg:text-[5.5rem] font-bold leading-[1.05] mb-8">
               <div className="overflow-hidden">
                 <span className={cn("block text-foreground hero-word", heroLoaded && "visible d1")}>
-                  The atelier
+                  A Smart Fashion
                 </span>
               </div>
               <div className="overflow-hidden">
                 <span className={cn("block text-accent italic hero-word", heroLoaded && "visible d2")}>
-                  management
+                  Catalogue with
                 </span>
               </div>
               <div className="overflow-hidden">
                 <span className={cn("block text-foreground hero-word", heroLoaded && "visible d3")}>
-                  platform.
+                  Tailor Measurement Integration.
                 </span>
               </div>
             </div>
