@@ -226,6 +226,7 @@ export type Database = {
           id: string
           image_url: string | null
           is_public: boolean
+          price: number | null
           tenant_id: string | null
           title: string
           uploaded_by: string | null
@@ -239,6 +240,7 @@ export type Database = {
           id?: string
           image_url?: string | null
           is_public?: boolean
+          price?: number | null
           tenant_id?: string | null
           title: string
           uploaded_by?: string | null
@@ -252,6 +254,7 @@ export type Database = {
           id?: string
           image_url?: string | null
           is_public?: boolean
+          price?: number | null
           tenant_id?: string | null
           title?: string
           uploaded_by?: string | null
@@ -318,7 +321,8 @@ export type Database = {
           bust: number | null
           chest: number | null
           created_by: string | null
-          customer_id: string
+          customer_id: string | null
+          customer_user_id: string | null
           date_recorded: string
           dress_length: number | null
           hip: number | null
@@ -347,7 +351,8 @@ export type Database = {
           bust?: number | null
           chest?: number | null
           created_by?: string | null
-          customer_id: string
+          customer_id?: string | null
+          customer_user_id?: string | null
           date_recorded?: string
           dress_length?: number | null
           hip?: number | null
@@ -376,7 +381,8 @@ export type Database = {
           bust?: number | null
           chest?: number | null
           created_by?: string | null
-          customer_id?: string
+          customer_id?: string | null
+          customer_user_id?: string | null
           date_recorded?: string
           dress_length?: number | null
           hip?: number | null
@@ -515,6 +521,7 @@ export type Database = {
           payment_status: string
           production_started_at: string | null
           ready_at: string | null
+          shipped_at: string | null
           status: Database["public"]["Enums"]["order_status"]
           tenant_id: string | null
           updated_at: string
@@ -537,6 +544,7 @@ export type Database = {
           payment_status?: string
           production_started_at?: string | null
           ready_at?: string | null
+          shipped_at?: string | null
           status?: Database["public"]["Enums"]["order_status"]
           tenant_id?: string | null
           updated_at?: string
@@ -559,6 +567,7 @@ export type Database = {
           payment_status?: string
           production_started_at?: string | null
           ready_at?: string | null
+          shipped_at?: string | null
           status?: Database["public"]["Enums"]["order_status"]
           tenant_id?: string | null
           updated_at?: string
@@ -624,6 +633,35 @@ export type Database = {
             foreignKeyName: "profiles_tenant_id_fkey"
             columns: ["tenant_id"]
             isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tenant_features: {
+        Row: {
+          features: Json
+          id: string
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          features?: Json
+          id?: string
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          features?: Json
+          id?: string
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tenant_features_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: true
             referencedRelation: "tenants"
             referencedColumns: ["id"]
           },
@@ -715,18 +753,21 @@ export type Database = {
       user_roles: {
         Row: {
           id: string
+          permissions: Json | null
           role: Database["public"]["Enums"]["app_role"]
           tenant_id: string | null
           user_id: string
         }
         Insert: {
           id?: string
+          permissions?: Json | null
           role?: Database["public"]["Enums"]["app_role"]
           tenant_id?: string | null
           user_id: string
         }
         Update: {
           id?: string
+          permissions?: Json | null
           role?: Database["public"]["Enums"]["app_role"]
           tenant_id?: string | null
           user_id?: string
@@ -747,6 +788,10 @@ export type Database = {
     }
     Functions: {
       accept_pending_invitation: { Args: never; Returns: undefined }
+      ensure_tenant_features: {
+        Args: { p_tenant_id: string }
+        Returns: undefined
+      }
       generate_booking_code: { Args: { p_tenant_id: string }; Returns: string }
       get_user_tenant_id: { Args: never; Returns: string }
       has_role: {
