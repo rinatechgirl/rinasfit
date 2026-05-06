@@ -344,60 +344,80 @@ const CustomerMeasurementOrderDialog = ({
   const initPaystack = async () => {
     if (!orderId || !designPrice) return;
     setPaymentLoading(true);
+    try {
+      const { data: config, error: configError } = await (supabase as any)
+        .from("tenant_payment_config")
+        .select("paystack_public_key")
+        .eq("tenant_id", item.tenant_id)
+        .maybeSingle();
 
-    const { data: config } = await (supabase
-      .from("tenant_payment_config")
-      .select("paystack_public_key")
-      .eq("tenant_id", item.tenant_id)
-      .maybeSingle() as any);
+      if (configError) {
+        console.error("Paystack config fetch error:", configError);
+        toast.error("Could not load payment config. Please try again.");
+        return;
+      }
 
-    if (!(config as any)?.paystack_public_key) {
-      toast.error("Payment not configured for this designer yet. Your order is placed — they will contact you.");
-      onSuccess();
-      return;
-    }
-
-    const PaystackPop = (window as any).PaystackPop;
-    if (!PaystackPop) {
-      toast.error("Payment system not loaded. Please refresh the page.");
-      setPaymentLoading(false);
-      return;
-    }
-
-    const handler = PaystackPop.setup({
-      key:      (config as any).paystack_public_key,
-      email:    customerEmail,
-      amount:   designPrice * 100,
-      currency,
-      ref:      `RF-${bookingCode ?? orderId}-${Date.now()}`,
-      metadata: { order_id: orderId, booking_code: bookingCode },
-      callback: async (response: { reference: string }) => {
-        // Verify payment server-side
-        const { data: { session } } = await supabase.auth.getSession();
-        const { error: fnError } = await supabase.functions.invoke("verify-payment", {
-          body: { reference: response.reference, order_id: orderId },
-          headers: session?.access_token
-            ? { Authorization: `Bearer ${session.access_token}` }
-            : undefined,
-        });
-
-        if (fnError) {
-          toast.error(`Payment could not be verified. Reference: ${response.reference} — contact support.`);
-          setPaymentLoading(false);
-          return;
-        }
-
-        toast.success("Payment confirmed! Your outfit is now being made. 🎉");
+      if (!(config as any)?.paystack_public_key) {
+        toast.error("Payment not configured for this designer yet. Your order is placed — they will contact you.");
         onSuccess();
-      },
-      onClose: () => {
-        toast("Payment cancelled.");
-        setPaymentLoading(false);
-      },
-    });
+        return;
+      }
 
-    handler.openIframe();
-    setPaymentLoading(false);
+      const PaystackPop = (window as any).PaystackPop;
+      if (!PaystackPop) {
+        toast.error("Payment system not loaded. Please refresh the page.");
+        return;
+      }
+
+      console.log("Launching Paystack:", {
+        key: (config as any).paystack_public_key?.slice(0, 12) + "…",
+        email: customerEmail,
+        amount: designPrice * 100,
+        currency,
+      });
+
+      const handler = PaystackPop.setup({
+        key:      (config as any).paystack_public_key,
+        email:    customerEmail,
+        amount:   designPrice * 100,
+        currency: currency || "NGN",
+        ref:      `RF-${bookingCode ?? orderId}-${Date.now()}`,
+        metadata: { order_id: orderId, booking_code: bookingCode },
+        callback: async (response: { reference: string }) => {
+          try {
+            const { data: { session } } = await supabase.auth.getSession();
+            const { error: fnError } = await supabase.functions.invoke("verify-payment", {
+              body: { reference: response.reference, order_id: orderId },
+              headers: session?.access_token
+                ? { Authorization: `Bearer ${session.access_token}` }
+                : undefined,
+            });
+
+            if (fnError) {
+              console.error("verify-payment error:", fnError);
+              toast.error(`Payment received but verification failed. Reference: ${response.reference} — contact support.`);
+              return;
+            }
+
+            toast.success("Payment confirmed! Your outfit is now being made.");
+            onSuccess();
+          } catch (err) {
+            console.error("Payment callback error:", err);
+            toast.error(`Payment received but could not be confirmed. Reference: ${response.reference}`);
+          }
+        },
+        onClose: () => {
+          toast("Payment cancelled.");
+        },
+      });
+
+      handler.openIframe();
+    } catch (err) {
+      console.error("Paystack launch error:", err);
+      toast.error("Could not launch payment. Please refresh and try again.");
+    } finally {
+      setPaymentLoading(false);
+    }
   };
 
   // ─── Render ───────────────────────────────────────────────────────────────

@@ -519,64 +519,87 @@ function PaystackButton({ order, onSuccess }: { order: Order; onSuccess: () => v
 
   const initializePayment = async () => {
     setLoading(true);
+    try {
+      const { data: config, error: configError } = await (supabase as any)
+        .from("tenant_payment_config")
+        .select("paystack_public_key")
+        .eq("tenant_id", order.tenant_id)
+        .maybeSingle();
 
-    const { data: config } = await supabase
-      .from("tenant_payment_config")
-      .select("paystack_public_key")
-      .eq("tenant_id", order.tenant_id)
-      .maybeSingle();
+      if (configError) {
+        console.error("Paystack config fetch error:", configError);
+        toast.error("Could not load payment config. Please try again.");
+        return;
+      }
 
-    if (!config?.paystack_public_key) {
-      toast.error("Payment not configured for this designer yet.");
+      if (!config?.paystack_public_key) {
+        toast.error("Payment not configured for this designer yet.");
+        return;
+      }
+
+      const { data: userData } = await supabase.auth.getUser();
+      const email = userData.user?.email ?? "";
+
+      if (!email) {
+        toast.error("Could not get your email. Please log out and back in.");
+        return;
+      }
+
+      const PaystackPop = (window as any).PaystackPop;
+      if (!PaystackPop) {
+        toast.error("Payment system not loaded. Please refresh the page.");
+        return;
+      }
+
+      console.log("Launching Paystack:", {
+        key: config.paystack_public_key?.slice(0, 12) + "…",
+        email,
+        amount: (order.agreed_price ?? 0) * 100,
+        currency: order.currency,
+      });
+
+      const handler = PaystackPop.setup({
+        key:      config.paystack_public_key,
+        email,
+        amount:   (order.agreed_price ?? 0) * 100,
+        currency: order.currency || "NGN",
+        ref:      `RF-${order.booking_code ?? order.id}-${Date.now()}`,
+        metadata: { order_id: order.id, booking_code: order.booking_code },
+        callback: async (response: { reference: string }) => {
+          try {
+            const { data: { session } } = await supabase.auth.getSession();
+            const { error: fnError } = await supabase.functions.invoke("verify-payment", {
+              body: { reference: response.reference, order_id: order.id },
+              headers: session?.access_token
+                ? { Authorization: `Bearer ${session.access_token}` }
+                : undefined,
+            });
+
+            if (fnError) {
+              console.error("verify-payment error:", fnError);
+              toast.error("Payment received but verification failed. Reference: " + response.reference + " — contact support.");
+              return;
+            }
+
+            toast.success("Payment successful! Your outfit is now being made.");
+            onSuccess();
+          } catch (err) {
+            console.error("Payment callback error:", err);
+            toast.error("Payment received but could not be confirmed. Reference: " + response.reference);
+          }
+        },
+        onClose: () => {
+          toast("Payment cancelled.");
+        },
+      });
+
+      handler.openIframe();
+    } catch (err) {
+      console.error("Paystack launch error:", err);
+      toast.error("Could not launch payment. Please refresh and try again.");
+    } finally {
       setLoading(false);
-      return;
     }
-
-    const { data: userData } = await supabase.auth.getUser();
-    const email = userData.user?.email ?? "";
-
-    const PaystackPop = (window as any).PaystackPop;
-    if (!PaystackPop) {
-      toast.error("Payment system not loaded. Please refresh the page.");
-      setLoading(false);
-      return;
-    }
-
-    const handler = PaystackPop.setup({
-      key:      config.paystack_public_key,
-      email,
-      amount:   (order.agreed_price ?? 0) * 100,
-      currency: order.currency,
-      ref:      `RF-${order.booking_code ?? order.id}-${Date.now()}`,
-      metadata: { order_id: order.id, booking_code: order.booking_code },
-      callback: async (response: { reference: string }) => {
-        // Verify the payment server-side before marking the order paid.
-        const { data: { session } } = await supabase.auth.getSession();
-        const { error: fnError } = await supabase.functions.invoke("verify-payment", {
-          body: { reference: response.reference, order_id: order.id },
-          headers: session?.access_token
-            ? { Authorization: `Bearer ${session.access_token}` }
-            : undefined,
-        });
-
-        if (fnError) {
-          toast.error("Payment could not be verified. Please contact support with your reference: " + response.reference);
-          setLoading(false);
-          return;
-        }
-
-        toast.success("Payment successful! Your outfit is now being made.");
-        onSuccess();
-        setLoading(false);
-      },
-      onClose: () => {
-        toast("Payment cancelled.");
-        setLoading(false);
-      },
-    });
-
-    handler.openIframe();
-    setLoading(false);
   };
 
   return (
