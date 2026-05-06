@@ -326,7 +326,7 @@ export default function Landing() {
             {/* Subheadline */}
             <p className={cn("font-body text-base sm:text-lg text-muted-foreground max-w-md leading-relaxed mb-10 reveal d4", heroLoaded && "visible")}>
               Customers, measurements, designs — managed from your own branded portal.
-              Built exclusively for tailoring and fashion businesses across the globe.
+              Built exclusively for tailoring and fashion businesses.
             </p>
 
             {/* CTAs */}
