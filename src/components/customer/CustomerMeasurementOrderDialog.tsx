@@ -364,8 +364,8 @@ const CustomerMeasurementOrderDialog = ({
       }
 
       const PaystackPop = (window as any).PaystackPop;
-      if (!PaystackPop) {
-        toast.error("Payment system not loaded. Please refresh the page.");
+      if (!PaystackPop || typeof PaystackPop.setup !== "function") {
+        toast.error("Payment system not loaded. Please refresh the page and try again.");
         return;
       }
 
@@ -383,28 +383,31 @@ const CustomerMeasurementOrderDialog = ({
         currency: currency || "NGN",
         ref:      `RF-${bookingCode ?? orderId}-${Date.now()}`,
         metadata: { order_id: orderId, booking_code: bookingCode },
-        callback: async (response: { reference: string }) => {
-          try {
-            const { data: { session } } = await supabase.auth.getSession();
-            const { error: fnError } = await supabase.functions.invoke("verify-payment", {
-              body: { reference: response.reference, order_id: orderId },
-              headers: session?.access_token
-                ? { Authorization: `Bearer ${session.access_token}` }
-                : undefined,
-            });
+        // Paystack v1 rejects async functions — use a regular function with an inner async IIFE
+        callback: (response: { reference: string }) => {
+          (async () => {
+            try {
+              const { data: { session } } = await supabase.auth.getSession();
+              const { error: fnError } = await supabase.functions.invoke("verify-payment", {
+                body: { reference: response.reference, order_id: orderId },
+                headers: session?.access_token
+                  ? { Authorization: `Bearer ${session.access_token}` }
+                  : undefined,
+              });
 
-            if (fnError) {
-              console.error("verify-payment error:", fnError);
-              toast.error(`Payment received but verification failed. Reference: ${response.reference} — contact support.`);
-              return;
+              if (fnError) {
+                console.error("verify-payment error:", fnError);
+                toast.error(`Payment received but verification failed. Reference: ${response.reference} — contact support.`);
+                return;
+              }
+
+              toast.success("Payment confirmed! Your outfit is now being made.");
+              onSuccess();
+            } catch (err) {
+              console.error("Payment callback error:", err);
+              toast.error(`Payment received but could not be confirmed. Reference: ${response.reference}`);
             }
-
-            toast.success("Payment confirmed! Your outfit is now being made.");
-            onSuccess();
-          } catch (err) {
-            console.error("Payment callback error:", err);
-            toast.error(`Payment received but could not be confirmed. Reference: ${response.reference}`);
-          }
+          })();
         },
         onClose: () => {
           toast("Payment cancelled.");
