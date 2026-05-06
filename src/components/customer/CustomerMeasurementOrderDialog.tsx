@@ -76,7 +76,7 @@ interface CartItem {
   design_id: string;
   tenant_id: string;
   added_at: string;
-  designs: { title: string; image_url: string | null; description: string | null; price: number | null };
+  designs: { title: string; image_url: string | null; back_view_image_url: string | null; description: string | null; price: number | null };
   tenants: { business_name: string; slug: string; logo_url: string | null; currency?: string };
 }
 
@@ -542,10 +542,24 @@ const CustomerMeasurementOrderDialog = ({
               <div className="rounded-xl border border-border p-4 space-y-3">
                 <p className="text-sm font-semibold text-foreground">Order Summary</p>
                 <div className="flex items-center gap-3">
-                  {item.designs.image_url && (
+                  {/* Show front + back side by side if both exist */}
+                  {item.designs.image_url && item.designs.back_view_image_url ? (
+                    <div className="flex gap-1.5 shrink-0">
+                      <div className="relative">
+                        <img src={item.designs.image_url} alt={item.designs.title}
+                          className="w-14 h-14 rounded-lg object-cover border border-border" />
+                        <span className="absolute bottom-0.5 left-0.5 text-[8px] bg-card/80 px-1 rounded font-medium">Front</span>
+                      </div>
+                      <div className="relative">
+                        <img src={item.designs.back_view_image_url} alt={`${item.designs.title} — Back`}
+                          className="w-14 h-14 rounded-lg object-cover border border-border" />
+                        <span className="absolute bottom-0.5 left-0.5 text-[8px] bg-card/80 px-1 rounded font-medium">Back</span>
+                      </div>
+                    </div>
+                  ) : item.designs.image_url ? (
                     <img src={item.designs.image_url} alt={item.designs.title}
                       className="w-14 h-14 rounded-lg object-cover border border-border" />
-                  )}
+                  ) : null}
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-foreground truncate">{item.designs.title}</p>
                     <p className="text-xs text-muted-foreground">{item.tenants.business_name}</p>

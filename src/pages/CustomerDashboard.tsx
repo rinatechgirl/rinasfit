@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Loader2, ShoppingBag, MessageCircle, Package,
   Image as ImageIcon, LogOut, User, Sun, Moon,
-  XCircle, Hourglass, Scissors, Ruler, Sparkles,
+  XCircle, Hourglass, Scissors, Ruler, Sparkles, RotateCcw,
 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -27,7 +27,7 @@ interface CartItem {
   design_id: string;
   tenant_id: string;
   added_at: string;
-  designs: { title: string; image_url: string | null; description: string | null; price: number | null };
+  designs: { title: string; image_url: string | null; back_view_image_url: string | null; description: string | null; price: number | null };
   tenants: { business_name: string; slug: string; logo_url: string | null; currency?: string };
 }
 
@@ -124,6 +124,16 @@ const CustomerDashboard = () => {
     tenantId: string; name: string; orderId?: string;
   } | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [flippedCards, setFlippedCards] = useState<Set<string>>(new Set());
+
+  const toggleFlip = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setFlippedCards((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
 
   useEffect(() => {
     if (!authLoading && !customer) {
@@ -138,7 +148,7 @@ const CustomerDashboard = () => {
     const [cartRes, ordersRes] = await Promise.all([
       supabase
         .from("cart_items")
-        .select("id, design_id, tenant_id, added_at, designs(title, image_url, description, price), tenants(business_name, slug, logo_url)")
+        .select("id, design_id, tenant_id, added_at, designs(title, image_url, back_view_image_url, description, price), tenants(business_name, slug, logo_url)")
         .eq("customer_user_id", customer.id)
         .order("added_at", { ascending: false }),
 
@@ -309,12 +319,39 @@ const CustomerDashboard = () => {
             ) : (
               <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
                 {cartItems.map((item) => {
+                  const isFlipped = flippedCards.has(item.id);
+                  const hasBothViews = !!(item.designs?.image_url && item.designs?.back_view_image_url);
                   return (
-                    <Card key={item.id} className="border-border/60 overflow-hidden">
+                    <Card key={item.id} className="border-border/60 overflow-hidden group">
                       <div className="aspect-square bg-muted relative overflow-hidden">
-                        {item.designs?.image_url
-                          ? <img src={item.designs.image_url} alt={item.designs.title} className="w-full h-full object-cover" loading="lazy" />
-                          : <div className="w-full h-full flex items-center justify-center"><ImageIcon className="w-8 h-8 text-muted-foreground/20" /></div>}
+                        {/* Front view */}
+                        <div className={`absolute inset-0 transition-opacity duration-500 ${isFlipped ? "opacity-0" : "opacity-100"}`}>
+                          {item.designs?.image_url
+                            ? <img src={item.designs.image_url} alt={item.designs.title} className="w-full h-full object-cover" loading="lazy" />
+                            : <div className="w-full h-full flex items-center justify-center"><ImageIcon className="w-8 h-8 text-muted-foreground/20" /></div>}
+                        </div>
+                        {/* Back view */}
+                        {item.designs?.back_view_image_url && (
+                          <div className={`absolute inset-0 transition-opacity duration-500 ${isFlipped ? "opacity-100" : "opacity-0"}`}>
+                            <img src={item.designs.back_view_image_url} alt={`${item.designs.title} — Back`} className="w-full h-full object-cover" loading="lazy" />
+                          </div>
+                        )}
+                        {/* Flip button */}
+                        {hasBothViews && (
+                          <button
+                            onClick={(e) => toggleFlip(item.id, e)}
+                            className="absolute bottom-2 left-2 z-10 bg-card/80 backdrop-blur-sm rounded-full p-1.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                            title={isFlipped ? "View front" : "View back"}
+                          >
+                            <RotateCcw className="w-3.5 h-3.5 text-foreground" />
+                          </button>
+                        )}
+                        {/* View label */}
+                        {hasBothViews && (
+                          <span className="absolute top-2 left-2 text-[10px] font-medium bg-card/80 backdrop-blur-sm px-1.5 py-0.5 rounded-full text-foreground opacity-0 group-hover:opacity-100 transition-opacity">
+                            {isFlipped ? "Back" : "Front"}
+                          </span>
+                        )}
                       </div>
                       <CardContent className="p-3 space-y-2">
                         <div>
