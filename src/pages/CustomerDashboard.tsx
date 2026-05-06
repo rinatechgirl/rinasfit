@@ -576,6 +576,7 @@ function PaystackButton({ order, onSuccess }: { order: Order; onSuccess: () => v
     });
 
     handler.openIframe();
+    setLoading(false);
   };
 
   return (

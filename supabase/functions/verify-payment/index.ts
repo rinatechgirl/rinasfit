@@ -56,7 +56,7 @@ serve(async (req) => {
     // ── Fetch the order and confirm it belongs to the authenticated customer ─
     const { data: order, error: orderError } = await supabaseAdmin
       .from("orders")
-      .select("id, tenant_id, customer_id, payment_status, agreed_price")
+      .select("id, tenant_id, customer_user_id, payment_status, agreed_price")
       .eq("id", order_id)
       .single();
 
@@ -68,7 +68,7 @@ serve(async (req) => {
     }
 
     // Ensure the authenticated user owns this order
-    if (order.customer_id !== user.id) {
+    if ((order as any).customer_user_id !== user.id) {
       return new Response(JSON.stringify({ error: "Forbidden" }), {
         status: 403,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
